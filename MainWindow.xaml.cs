@@ -41,8 +41,19 @@ namespace PakonImageConverter
                 foreach (var filename in files)
                 {
                     using System.IO.StreamReader ms = new System.IO.StreamReader(filename);
-                    ms.BaseStream.Read(new byte[2], 0, 2);
-                    ms.BaseStream.Read(buffer);
+                    //ms.BaseStream.Read(new byte[2], 0, 2);
+                    ms.BaseStream.Read(buffer, 2, (3000 * 2000 * 6) - 2);
+
+                    var bmp = new Bitmap(3000, 2000, PixelFormat.Format48bppRgb);
+                    Rectangle dimension = new Rectangle(0, 0, bmp.Width, bmp.Height);
+                    BitmapData picData = bmp.LockBits(dimension, ImageLockMode.ReadWrite, bmp.PixelFormat);
+                    IntPtr pixelStartAddress = picData.Scan0;
+
+
+                    //Copy the pixel data into the bitmap structure
+                    System.Runtime.InteropServices.Marshal.Copy(interleaved, 0, pixelStartAddress, interleaved.Length);
+                    bmp.UnlockBits(picData);
+                    bmp.Save("bitmaptest.jpg", ImageFormat.Jpeg);
 
                     int pixelSize = 6;
 
@@ -64,16 +75,7 @@ namespace PakonImageConverter
                         interleaved[i * pixelSize + 5] = buffer[(2 * 2 * 3000 * 2000) + i + 1];
                     }
 
-                    using (Image<Rgb48> image = Image.LoadPixelData<Rgb48>(interleaved, 3000, 2000))
-                    {
-                        image.Mutate(x => x
-                            .Resize(new ResizeOptions
-                            {
-                                Size = new SixLabors.ImageSharp.Size(3000, 2000)
-                            }));
 
-                        image.Save("bar2.jpg", new JpegEncoder());
-                    }
                 }
             }
 
