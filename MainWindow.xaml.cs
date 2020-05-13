@@ -28,11 +28,12 @@ namespace PakonImageConverter
     public partial class MainWindow : Window
     {
         private double _gamma = 0.6;
-
-
+        public bool Invert { get; set; }
         public MainWindow()
         {
             InitializeComponent();
+            checkBox.DataContext = this;
+            DataContext = this;
         }
 
         private void ImagePanel_Drop(object sender, DragEventArgs e)
@@ -96,6 +97,9 @@ namespace PakonImageConverter
 
                         // TODO: folder setting
                         // TODO: preview before save
+                        if (Invert)
+                            image.Mutate(x => x.Invert());
+
                         image.Save(filename.Split("\\")[^1].Replace("raw", "png"), new PngEncoder() { BitDepth = PngBitDepth.Bit16 });
 
                         Application.Current.Dispatcher.Invoke(() => LoadingProgress.Value++);
