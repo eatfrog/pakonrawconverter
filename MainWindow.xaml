@@ -15,7 +15,7 @@
         <Label x:Name="gammaLabel" Content="Gamma: 0,49" HorizontalAlignment="Left" Margin="28,353,0,0" VerticalAlignment="Top"/>
         <Image x:Name="imageBox" HorizontalAlignment="Left" Height="197" Margin="182,217,0,0" VerticalAlignment="Top" Width="399"/>
         <ProgressBar x:Name="LoadingProgress" HorizontalAlignment="Left" Height="10" Margin="28,384,0,0" VerticalAlignment="Top" Width="179"/>
-        <CheckBox x:Name="checkBox" Content="Invert" HorizontalAlignment="Left" Margin="28,85,0,0" VerticalAlignment="Top" IsChecked="{Binding Invert}"/>
+        <CheckBox x:Name="checkBox" Content="Bw Negative" HorizontalAlignment="Left" Margin="28,85,0,0" VerticalAlignment="Top" IsChecked="{Binding BwNegative}"/>
 
     </Grid>
 </Window>

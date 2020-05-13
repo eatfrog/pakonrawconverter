@@ -4,6 +4,7 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
+using System.Media;
 using System.Threading.Channels;
 using System.Threading.Tasks;
 using System.Windows;
@@ -28,7 +29,7 @@ namespace PakonImageConverter
     public partial class MainWindow : Window
     {
         private double _gamma = 0.6;
-        public bool Invert { get; set; }
+        public bool BwNegative { get; set; }
         public MainWindow()
         {
             InitializeComponent();
@@ -63,6 +64,7 @@ namespace PakonImageConverter
 
                         using Image<Rgb48> image = Image.LoadPixelData<Rgb48>(interleaved, 3000, 2000);
 
+                        // TODO: We should do this for black point also, currently we are pushing shadows too far up
                         Rgb48 brightest = FindBrightestValues(image);
 
                         double factorR = 65600 / (double)brightest.R;
@@ -80,7 +82,7 @@ namespace PakonImageConverter
 
                                 // TODO: these variable color balance adjustments should have a setting
                                 double rangeR = (double)pixel.R / 65500;
-                                double correctionR = C * Math.Pow(rangeR, _gamma * 0.97);
+                                double correctionR = C * Math.Pow(rangeR, _gamma * 0.98);
                                 pixel.R = (ushort)(correctionR * 65500);
 
                                 double rangeG = (double)pixel.G / 65500;
@@ -97,13 +99,23 @@ namespace PakonImageConverter
 
                         // TODO: folder setting
                         // TODO: preview before save
-                        if (Invert)
-                            image.Mutate(x => x.Invert());
+
+                        if (BwNegative)
+                        {
+                            image.Mutate(x => x.Invert()); // We probably want separate adjustments for bw raws
+                            image.Mutate(x => x.Saturate(0f)); // TODO: setting
+                        }
+                        else
+                        {
+                            image.Mutate(x => x.Contrast(1.05f)); // TODO: setting
+                            image.Mutate(x => x.Saturate(1.05f)); // TODO: setting
+                        }
 
                         image.Save(filename.Split("\\")[^1].Replace("raw", "png"), new PngEncoder() { BitDepth = PngBitDepth.Bit16 });
 
                         Application.Current.Dispatcher.Invoke(() => LoadingProgress.Value++);
                     }
+                    SystemSounds.Beep.Play();
                 });
             }
         }
