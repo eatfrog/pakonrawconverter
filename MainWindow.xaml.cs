@@ -13,6 +13,8 @@ using System.Windows.Documents;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Advanced;
+using SixLabors.ImageSharp.Formats;
 using SixLabors.ImageSharp.Formats.Bmp;
 using SixLabors.ImageSharp.Formats.Jpeg;
 using SixLabors.ImageSharp.Formats.Png;
@@ -96,22 +98,26 @@ namespace PakonImageConverter
                                 pixelRowSpan[x] = pixel;
                             }
                         }
-
+                        //imageBox.Source = LoadImage(buffer);
                         // TODO: folder setting
                         // TODO: preview before save
+                        string newFilename = filename.Replace("raw", "png");
 
                         if (BwNegative)
                         {
                             image.Mutate(x => x.Invert()); // We probably want separate adjustments for bw raws
                             image.Mutate(x => x.Saturate(0f)); // TODO: setting
+                            image.Save(newFilename, new PngEncoder() { ColorType = PngColorType.Grayscale, BitDepth = PngBitDepth.Bit16 });
                         }
                         else
                         {
                             image.Mutate(x => x.Contrast(1.05f)); // TODO: setting
                             image.Mutate(x => x.Saturate(1.05f)); // TODO: setting
+                            var test = image.ToArray(new BmpEncoder());
+                            Application.Current.Dispatcher.Invoke(() => imageBox.Source = test.ToBitmap().ToBitmapSource());
+                            
+                            image.Save(newFilename, new PngEncoder() { BitDepth = PngBitDepth.Bit16 });
                         }
-
-                        image.Save(filename.Split("\\")[^1].Replace("raw", "png"), new PngEncoder() { BitDepth = PngBitDepth.Bit16 });
 
                         Application.Current.Dispatcher.Invoke(() => LoadingProgress.Value++);
                     }
@@ -130,10 +136,12 @@ namespace PakonImageConverter
                 Span<Rgb48> pixelRowSpan = image.GetPixelRowSpan(y);
                 for (int x = 0; x < image.Width; x++)
                 {
-                    var pixel = pixelRowSpan[x];
-                    brightestR = pixel.R > brightestR ? pixel.R : brightestR;
-                    brightestG = pixel.G > brightestG ? pixel.G : brightestG;
-                    brightestB = pixel.B > brightestB ? pixel.B : brightestB;
+                    if (pixelRowSpan[x].R > brightestR)
+                        brightestR = pixelRowSpan[x].R;
+                    if (pixelRowSpan[x].G > brightestG)
+                        brightestG = pixelRowSpan[x].G;
+                    if (pixelRowSpan[x].B > brightestB)
+                        brightestB = pixelRowSpan[x].B;
                 }
             }
             return new Rgb48(brightestR, brightestG, brightestB);
@@ -164,27 +172,8 @@ namespace PakonImageConverter
         {
             _gamma = e.NewValue;
             if (gammaLabel != null)
-                gammaLabel.Content = "Gamma: " + e.NewValue;
+                gammaLabel.Content = "Gamma conversion: " + String.Format("{0:0.00}", 1 / e.NewValue);
         }
         
-
-        // TODO: can we load a bytearray through this into wpf?
-        private static BitmapImage LoadImage(byte[] imageData)
-        {
-            if (imageData == null || imageData.Length == 0) return null;
-            var image = new BitmapImage();
-            using (var mem = new MemoryStream(imageData))
-            {
-                mem.Position = 0;
-                image.BeginInit();
-                image.CreateOptions = BitmapCreateOptions.PreservePixelFormat;
-                image.CacheOption = BitmapCacheOption.OnLoad;
-                image.UriSource = null;
-                image.StreamSource = mem;
-                image.EndInit();
-            }
-            image.Freeze();
-            return image;
-        }
     }
 }
