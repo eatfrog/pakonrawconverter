@@ -46,17 +46,19 @@ namespace PakonImageConverter
                 // Note that you can have more than one file.
                 string[] files = (string[])e.Data.GetData(DataFormats.FileDrop);
 
-                // The file is in planar mode so RRRRRGGGGGBBBB
-                byte[] buffer = new byte[3000 * 2000 * 6];
-                // But imagesharp wants it in interleaved mode so RGBRGBRGBRGB
-                byte[] interleaved = new byte[3000 * 2000 * 6];
+
                 LoadingProgress.Maximum = files.Count() * 2;
                 LoadingProgress.Value = 0;
                 Task.Run(() =>
                 {
-                    // TODO: can be improved through parallell processing
-                    foreach (var filename in files)
+                    // TODO: we are allocating a ton of buffers now, what happens on a low mem machine?
+                    Parallel.ForEach(files, filename =>
                     {
+                        // The file is in planar mode so RRRRRGGGGGBBBB
+                        byte[] buffer = new byte[3000 * 2000 * 6];
+                        // But imagesharp wants it in interleaved mode so RGBRGBRGBRGB
+                        byte[] interleaved = new byte[3000 * 2000 * 6];
+
                         using StreamReader ms = new StreamReader(filename);
                         var _ = new byte[16];
                         ms.BaseStream.Read(_, 0, 16);
@@ -76,7 +78,7 @@ namespace PakonImageConverter
                         double factorG = 65600 / (double)brightest.G;
                         double factorB = 65600 / (double)brightest.B;
 
-                        for (int y = 0; y < image.Height; y++)
+                        Parallel.For(0, image.Height, y => 
                         {
                             Span<Rgb48> pixelRowSpan = image.GetPixelRowSpan(y);
                             for (int x = 0; x < image.Width; x++)
@@ -99,17 +101,17 @@ namespace PakonImageConverter
 
                                 pixelRowSpan[x] = pixel;
                             }
-                        }
-                        //imageBox.Source = LoadImage(buffer);
+                        });
+ 
                         // TODO: folder setting
                         // TODO: preview before save
-                        string newFilename = filename.Replace("raw", "png");
+                        string pngFilename = filename.Replace("raw", "png");
 
                         if (BwNegative)
                         {
                             image.Mutate(x => x.Invert()); // We probably want separate adjustments for bw raws
                             image.Mutate(x => x.Saturate(0f)); // TODO: setting
-                            image.Save(newFilename, new PngEncoder() { ColorType = PngColorType.Grayscale, BitDepth = PngBitDepth.Bit16 });
+                            image.Save(pngFilename, new PngEncoder() { ColorType = PngColorType.Grayscale, BitDepth = PngBitDepth.Bit16 });
                         }
                         else
                         {
@@ -117,12 +119,12 @@ namespace PakonImageConverter
                             image.Mutate(x => x.Saturate(1.05f)); // TODO: setting
                             var test = image.ToArray(new BmpEncoder());
                             Application.Current.Dispatcher.Invoke(() => imageBox.Source = test.ToBitmap().ToBitmapSource());
-                            
-                            image.Save(newFilename, new PngEncoder() { BitDepth = PngBitDepth.Bit16 });
+
+                            image.Save(pngFilename, new PngEncoder() { BitDepth = PngBitDepth.Bit16 });
                         }
 
                         Application.Current.Dispatcher.Invoke(() => LoadingProgress.Value++);
-                    }
+                    });
                     SystemSounds.Beep.Play();
                 });
             }
@@ -133,7 +135,7 @@ namespace PakonImageConverter
             ushort brightestR = 0;
             ushort brightestG = 0;
             ushort brightestB = 0;
-            for (int y = 0; y < image.Height; y++)
+            Parallel.For(0, image.Height, y =>
             {
                 Span<Rgb48> pixelRowSpan = image.GetPixelRowSpan(y);
                 for (int x = 0; x < image.Width; x++)
@@ -145,7 +147,7 @@ namespace PakonImageConverter
                     if (pixelRowSpan[x].B > brightestB)
                         brightestB = pixelRowSpan[x].B;
                 }
-            }
+            });
             return new Rgb48(brightestR, brightestG, brightestB);
         }
 
