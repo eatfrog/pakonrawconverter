@@ -58,7 +58,10 @@ namespace PakonImageConverter
                     foreach (var filename in files)
                     {
                         using StreamReader ms = new StreamReader(filename);
-                        ms.BaseStream.Read(buffer, 2, (3000 * 2000 * 6) - 2);
+                        var _ = new byte[16];
+                        ms.BaseStream.Read(_, 0, 16);
+
+                        ms.BaseStream.Read(buffer, 0, 3000 * 2000 * 6);
 
                         Application.Current.Dispatcher.Invoke(() => LoadingProgress.Value++);
 
@@ -72,7 +75,6 @@ namespace PakonImageConverter
                         double factorR = 65600 / (double)brightest.R;
                         double factorG = 65600 / (double)brightest.G;
                         double factorB = 65600 / (double)brightest.B;
-                        const double C = 1;
 
                         for (int y = 0; y < image.Height; y++)
                         {
@@ -84,15 +86,15 @@ namespace PakonImageConverter
 
                                 // TODO: these variable color balance adjustments should have a setting
                                 double rangeR = (double)pixel.R / 65500;
-                                double correctionR = C * Math.Pow(rangeR, _gamma * 0.98);
+                                double correctionR = Math.Pow(rangeR, _gamma * 0.98);
                                 pixel.R = (ushort)(correctionR * 65500);
 
                                 double rangeG = (double)pixel.G / 65500;
-                                double correctionG = C * Math.Pow(rangeG, _gamma * 1.02);
+                                double correctionG = Math.Pow(rangeG, _gamma * 1.02);
                                 pixel.G = (ushort)(correctionG * 65500);
 
                                 double rangeB = (double)pixel.B / 65500;
-                                double correctionB = C * Math.Pow(rangeB, _gamma * 1.03);
+                                double correctionB = Math.Pow(rangeB, _gamma * 1.03);
                                 pixel.B = (ushort)(correctionB * 65500);
 
                                 pixelRowSpan[x] = pixel;
