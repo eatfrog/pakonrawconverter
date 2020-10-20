@@ -130,6 +130,8 @@ namespace PakonImageConverter
             }
         }
 
+        private static object _locker = new object();
+
         private static Rgb48 FindBrightestValues(Image<Rgb48> image)
         {
             ushort brightestR = 0;
@@ -141,11 +143,37 @@ namespace PakonImageConverter
                 for (int x = 0; x < image.Width; x++)
                 {
                     if (pixelRowSpan[x].R > brightestR)
-                        brightestR = pixelRowSpan[x].R;
+                    {
+                        lock (_locker)
+                        {
+                            if (pixelRowSpan[x].R > brightestR)
+                            {
+                                brightestR = pixelRowSpan[x].R;
+                            }
+                        }
+                    }
+
                     if (pixelRowSpan[x].G > brightestG)
-                        brightestG = pixelRowSpan[x].G;
+                    {
+                        lock (_locker)
+                        {
+                            if (pixelRowSpan[x].G > brightestG)
+                            {
+                                brightestG = pixelRowSpan[x].G;
+                            }
+                        }
+                    }
+
                     if (pixelRowSpan[x].B > brightestB)
-                        brightestB = pixelRowSpan[x].B;
+                    {
+                        lock (_locker)
+                        {
+                            if (pixelRowSpan[x].B > brightestB)
+                            {
+                                brightestB = pixelRowSpan[x].B;
+                            }
+                        }
+                    }
                 }
             });
             return new Rgb48(brightestR, brightestG, brightestB);
