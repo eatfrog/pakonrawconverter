@@ -1,27 +1,15 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Drawing;
-using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
 using System.Media;
-using System.Threading.Channels;
 using System.Threading.Tasks;
 using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Documents;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
 using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.Advanced;
-using SixLabors.ImageSharp.Formats;
 using SixLabors.ImageSharp.Formats.Bmp;
-using SixLabors.ImageSharp.Formats.Jpeg;
 using SixLabors.ImageSharp.Formats.Png;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
 using Image = SixLabors.ImageSharp.Image;
-using Rectangle = System.Drawing.Rectangle;
 
 namespace PakonImageConverter
 {
@@ -55,6 +43,7 @@ namespace PakonImageConverter
                     Parallel.ForEach(files, filename =>
                     {
                         // The file is in planar mode so RRRRRGGGGGBBBB
+                        // TODO: setting for different sized images, works only in 3000*2000 now (non-plus users take note)
                         byte[] buffer = new byte[3000 * 2000 * 6];
                         // But imagesharp wants it in interleaved mode so RGBRGBRGBRGB
                         byte[] interleaved = new byte[3000 * 2000 * 6];
@@ -71,38 +60,10 @@ namespace PakonImageConverter
 
                         using Image<Rgb48> image = Image.LoadPixelData<Rgb48>(interleaved, 3000, 2000);
 
-                        // TODO: We should do this for black point also, currently we are pushing shadows too far up
-                        Rgb48 brightest = FindBrightestValues(image);
+                        SetWhiteAndBlackpoint(image);
 
-                        double factorR = 65600 / (double)brightest.R;
-                        double factorG = 65600 / (double)brightest.G;
-                        double factorB = 65600 / (double)brightest.B;
+                        GammaCorrection(image);
 
-                        Parallel.For(0, image.Height, y => 
-                        {
-                            Span<Rgb48> pixelRowSpan = image.GetPixelRowSpan(y);
-                            for (int x = 0; x < image.Width; x++)
-                            {
-                                var pixel = pixelRowSpan[x];
-                                pixel = new Rgb48((ushort)(pixel.R * factorR), (ushort)(pixel.G * factorG), (ushort)(pixel.B * factorB));
-
-                                // TODO: these variable color balance adjustments should have a setting
-                                double rangeR = (double)pixel.R / 65500;
-                                double correctionR = Math.Pow(rangeR, _gamma * 0.98);
-                                pixel.R = (ushort)(correctionR * 65500);
-
-                                double rangeG = (double)pixel.G / 65500;
-                                double correctionG = Math.Pow(rangeG, _gamma * 1.02);
-                                pixel.G = (ushort)(correctionG * 65500);
-
-                                double rangeB = (double)pixel.B / 65500;
-                                double correctionB = Math.Pow(rangeB, _gamma * 1.03);
-                                pixel.B = (ushort)(correctionB * 65500);
-
-                                pixelRowSpan[x] = pixel;
-                            }
-                        });
- 
                         // TODO: folder setting
                         // TODO: preview before save
                         string pngFilename = filename.Replace("raw", "png");
@@ -110,7 +71,7 @@ namespace PakonImageConverter
                         if (BwNegative)
                         {
                             image.Mutate(x => x.Invert()); // We probably want separate adjustments for bw raws
-                            image.Mutate(x => x.Saturate(0f)); // TODO: setting
+                            image.Mutate(x => x.Saturate(0f)); // TODO: setting                            
                             image.Save(pngFilename, new PngEncoder() { ColorType = PngColorType.Grayscale, BitDepth = PngBitDepth.Bit16 });
                         }
                         else
@@ -130,45 +91,142 @@ namespace PakonImageConverter
             }
         }
 
-        private static object _locker = new object();
-
-        private static Rgb48 FindBrightestValues(Image<Rgb48> image)
+        private void GammaCorrection(Image<Rgb48> image) => Parallel.For(0, image.Height, y =>
         {
-            ushort brightestR = 0;
-            ushort brightestG = 0;
-            ushort brightestB = 0;
+            Span<Rgb48> pixelRowSpan = image.GetPixelRowSpan(y);
+            for (int x = 0; x < image.Width; x++)
+            {
+                var pixel = pixelRowSpan[x];
+
+                // TODO: these variable color balance adjustments should have a setting
+                double rangeR = (double)pixel.R / 65500;
+                double correctionR = Math.Pow(rangeR, _gamma * 0.98);
+                pixel.R = (ushort)(correctionR * 65500);
+
+                double rangeG = (double)pixel.G / 65500;
+                double correctionG = Math.Pow(rangeG, _gamma * 1.02);
+                pixel.G = (ushort)(correctionG * 65500);
+
+                double rangeB = (double)pixel.B / 65500;
+                double correctionB = Math.Pow(rangeB, _gamma * 1.03);
+                pixel.B = (ushort)(correctionB * 65500);
+
+                pixelRowSpan[x] = pixel;
+            }
+        });
+        private static void SetWhiteAndBlackpoint(Image<Rgb48> image)
+        {
+            // Note that for what is dark/bright depends on if the image is positive or negative
+            // Naming here is based on a negative image which means low value is bright after inversion
+            Rgb48 darkest = FindDarkestPixel(image);
+            Rgb48 brightest = FindBrightestPixel(image);
             Parallel.For(0, image.Height, y =>
             {
                 Span<Rgb48> pixelRowSpan = image.GetPixelRowSpan(y);
                 for (int x = 0; x < image.Width; x++)
                 {
-                    if (pixelRowSpan[x].R > brightestR)
+                    var pixel = pixelRowSpan[x];
+
+                    /* Set levels
+                     * ChannelValue = 65 535 * ( ( ChannelValue - BrightestValue ) /  ( DarkestValue - BrightestValue ) )
+                     * Again, please note that Dark/Bright is depending on if the image is a positive or negative
+                     * and here I am assuming we are looking at a negative image pre-inversion
+                     */                    
+                    pixel = new Rgb48(  (ushort)Math.Round(65535 * (((double)pixel.R - brightest.R) / (darkest.R - brightest.R)), 0),
+                                        (ushort)Math.Round(65535 * (((double)pixel.G - brightest.G) / (darkest.G - brightest.G)), 0),
+                                        (ushort)Math.Round(65535 * (((double)pixel.B - brightest.B) / (darkest.B - brightest.B)), 0));
+                                        
+                    pixelRowSpan[x] = pixel;
+                }
+            });
+        }
+
+        private static object _locker = new object();
+
+        private static Rgb48 FindDarkestPixel(Image<Rgb48> image)
+        {
+            ushort darkestR = 0;
+            ushort darkestG = 0;
+            ushort darkestB = 0;
+            Parallel.For(0, image.Height, y =>
+            {
+                Span<Rgb48> pixelRowSpan = image.GetPixelRowSpan(y);
+                for (int x = 0; x < image.Width; x++)
+                {
+                    if (pixelRowSpan[x].R > darkestR)
                     {
                         lock (_locker)
                         {
-                            if (pixelRowSpan[x].R > brightestR)
+                            if (pixelRowSpan[x].R > darkestR)
+                            {
+                                darkestR = pixelRowSpan[x].R;
+                            }
+                        }
+                    }
+
+                    if (pixelRowSpan[x].G > darkestG)
+                    {
+                        lock (_locker)
+                        {
+                            if (pixelRowSpan[x].G > darkestG)
+                            {
+                                darkestG = pixelRowSpan[x].G;
+                            }
+                        }
+                    }
+
+                    if (pixelRowSpan[x].B > darkestB)
+                    {
+                        lock (_locker)
+                        {
+                            if (pixelRowSpan[x].B > darkestB)
+                            {
+                                darkestB = pixelRowSpan[x].B;
+                            }
+                        }
+                    }
+                }
+            });
+            return new Rgb48(darkestR, darkestG, darkestB);
+        }
+
+        private static Rgb48 FindBrightestPixel(Image<Rgb48> image)
+        {
+            ushort brightestR = 65_535;
+            ushort brightestG = 65_535;
+            ushort brightestB = 65_535;
+            Parallel.For(0, image.Height, y =>
+            {
+                Span<Rgb48> pixelRowSpan = image.GetPixelRowSpan(y);
+                for (int x = 0; x < image.Width; x++)
+                {
+                    if (pixelRowSpan[x].R < brightestR)
+                    {
+                        lock (_locker)
+                        {
+                            if (pixelRowSpan[x].R < brightestR)
                             {
                                 brightestR = pixelRowSpan[x].R;
                             }
                         }
                     }
 
-                    if (pixelRowSpan[x].G > brightestG)
+                    if (pixelRowSpan[x].G < brightestG)
                     {
                         lock (_locker)
                         {
-                            if (pixelRowSpan[x].G > brightestG)
+                            if (pixelRowSpan[x].G < brightestG)
                             {
                                 brightestG = pixelRowSpan[x].G;
                             }
                         }
                     }
 
-                    if (pixelRowSpan[x].B > brightestB)
+                    if (pixelRowSpan[x].B < brightestB)
                     {
                         lock (_locker)
                         {
-                            if (pixelRowSpan[x].B > brightestB)
+                            if (pixelRowSpan[x].B < brightestB)
                             {
                                 brightestB = pixelRowSpan[x].B;
                             }
