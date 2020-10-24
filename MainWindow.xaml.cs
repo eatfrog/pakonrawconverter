@@ -131,13 +131,20 @@ namespace PakonImageConverter
                      * ChannelValue = 65 535 * ( ( ChannelValue - BrightestValue ) /  ( DarkestValue - BrightestValue ) )
                      * Again, please note that Dark/Bright is depending on if the image is a positive or negative
                      * and here I am assuming we are looking at a negative image pre-inversion
-                     */                    
-                    pixel = new Rgb48(  (ushort)Math.Round(65535 * (((double)pixel.R - brightest.R) / (darkest.R - brightest.R)), 0),
-                                        (ushort)Math.Round(65535 * (((double)pixel.G - brightest.G) / (darkest.G - brightest.G)), 0),
-                                        (ushort)Math.Round(65535 * (((double)pixel.B - brightest.B) / (darkest.B - brightest.B)), 0));
-                                        
+                     */
+
+                    double r = (double)(pixel.R - brightest.R) / (darkest.R - brightest.R);
+                    double g = (double)(pixel.G - brightest.G) / (darkest.G - brightest.G);
+                    double b = (double)(pixel.B - brightest.B) / (darkest.B - brightest.B);
+                    r = Math.Clamp(r, 0, 65_534);
+                    g = Math.Clamp(g, 0, 65_534);
+                    b = Math.Clamp(b, 0, 65_534);
+                    pixel = new Rgb48(  (ushort)(65_534 * r),
+                                        (ushort)(65_534 * g),
+                                        (ushort)(65_534 * b));
+
                     pixelRowSpan[x] = pixel;
-                }
+                } 
             });
         }
 
@@ -200,9 +207,9 @@ namespace PakonImageConverter
 
         private Rgb48 FindBrightestPixel(Image<Rgb48> image)
         {
-            ushort brightestR = 65_535;
-            ushort brightestG = 65_535;
-            ushort brightestB = 65_535;
+            ushort brightestR = 65_534;
+            ushort brightestG = 65_534;
+            ushort brightestB = 65_534;
             Parallel.For(0, image.Height, y =>
             {
                 Span<Rgb48> pixelRowSpan = image.GetPixelRowSpan(y);
@@ -246,10 +253,10 @@ namespace PakonImageConverter
             // bump it up just a notch
             if (BwNegative)
             {
-                brightestR += 100; brightestG += 100; brightestB += 100;
-                if (brightestR > 65_535) brightestR = 65_535;
-                if (brightestG > 65_535) brightestG = 65_535;
-                if (brightestB > 65_535) brightestB = 65_535;
+                brightestR = Math.Clamp(brightestR, (ushort)0, (ushort)65_454);
+                brightestR = Math.Clamp(brightestG, (ushort)0, (ushort)65_454);
+                brightestR = Math.Clamp(brightestB, (ushort)0, (ushort)65_454);
+                brightestR += 80; brightestG += 80; brightestB += 80;
             }
             return new Rgb48(brightestR, brightestG, brightestB);
         }
