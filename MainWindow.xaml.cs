@@ -114,7 +114,7 @@ namespace PakonImageConverter
                 pixelRowSpan[x] = pixel;
             }
         });
-        private static void SetWhiteAndBlackpoint(Image<Rgb48> image)
+        private void SetWhiteAndBlackpoint(Image<Rgb48> image)
         {
             // Note that for what is dark/bright depends on if the image is positive or negative
             // Naming here is based on a negative image which means low value is bright after inversion
@@ -141,9 +141,9 @@ namespace PakonImageConverter
             });
         }
 
-        private static object _locker = new object();
+        private object _locker = new object();
 
-        private static Rgb48 FindDarkestPixel(Image<Rgb48> image)
+        private Rgb48 FindDarkestPixel(Image<Rgb48> image)
         {
             ushort darkestR = 0;
             ushort darkestG = 0;
@@ -187,10 +187,18 @@ namespace PakonImageConverter
                     }
                 }
             });
+
+            if (BwNegative)
+            {
+                darkestR -= 100; darkestG -= 100; darkestB -= 100;
+                if (darkestR < 0) darkestR = 0;
+                if (darkestG < 0) darkestG = 0;
+                if (darkestB < 0) darkestB = 0;
+            }
             return new Rgb48(darkestR, darkestG, darkestB);
         }
 
-        private static Rgb48 FindBrightestPixel(Image<Rgb48> image)
+        private Rgb48 FindBrightestPixel(Image<Rgb48> image)
         {
             ushort brightestR = 65_535;
             ushort brightestG = 65_535;
@@ -234,6 +242,15 @@ namespace PakonImageConverter
                     }
                 }
             });
+
+            // bump it up just a notch
+            if (BwNegative)
+            {
+                brightestR += 100; brightestG += 100; brightestB += 100;
+                if (brightestR > 65_535) brightestR = 65_535;
+                if (brightestG > 65_535) brightestG = 65_535;
+                if (brightestB > 65_535) brightestB = 65_535;
+            }
             return new Rgb48(brightestR, brightestG, brightestB);
         }
 
