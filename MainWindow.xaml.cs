@@ -7,6 +7,7 @@ using System.Windows;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Formats.Bmp;
 using SixLabors.ImageSharp.Formats.Png;
+using SixLabors.ImageSharp.Formats.Tiff;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
 using Image = SixLabors.ImageSharp.Image;
@@ -18,13 +19,15 @@ namespace PakonImageConverter
     /// </summary>
     public partial class MainWindow : Window
     {
-        private double _gamma = 0.6;
+        private double _gamma = 0.4545454545454545;
         public bool BwNegative { get; set; }
         public MainWindow()
         {
             InitializeComponent();
             checkBox.DataContext = this;
             DataContext = this;
+            imageFormat.ItemsSource = Enum.GetValues(typeof(ImageFormats)).Cast<ImageFormats>();
+            imageFormat.SelectedIndex = 0;
         }
 
         private void ImagePanel_Drop(object sender, DragEventArgs e)
@@ -60,28 +63,46 @@ namespace PakonImageConverter
 
                         using Image<Rgb48> image = Image.LoadPixelData<Rgb48>(interleaved, 3000, 2000);
 
-                        SetWhiteAndBlackpoint(image);
+                        image.SetWhiteAndBlackpoint(BwNegative);
 
                         GammaCorrection(image);
 
                         // TODO: folder setting
                         // TODO: preview before save
-                        string pngFilename = filename.Replace("raw", "png");
 
                         if (BwNegative)
                         {
                             image.Mutate(x => x.Invert()); // We probably want separate adjustments for bw raws
                             image.Mutate(x => x.Saturate(0f)); // TODO: setting                            
-                            image.Save(pngFilename, new PngEncoder() { ColorType = PngColorType.Grayscale, BitDepth = PngBitDepth.Bit16 });
+                            image.Save(filename.Replace("raw", "png"), new PngEncoder() { ColorType = PngColorType.Grayscale, BitDepth = PngBitDepth.Bit16 });
+
+                            var preview = image.ToArray(new BmpEncoder());
+                            Application.Current.Dispatcher.Invoke(() => imageBox.Source = preview.ToBitmap().ToBitmapSource());
                         }
                         else
                         {
-                            image.Mutate(x => x.Contrast(1.05f)); // TODO: setting
-                            image.Mutate(x => x.Saturate(1.05f)); // TODO: setting
-                            var test = image.ToArray(new BmpEncoder());
-                            Application.Current.Dispatcher.Invoke(() => imageBox.Source = test.ToBitmap().ToBitmapSource());
+                            image.Mutate(x => x.Contrast(1.08f)); // TODO: setting
+                            image.Mutate(x => x.Saturate(1.08f)); // TODO: setting
+                            var preview = image.ToArray(new BmpEncoder());
+                            Application.Current.Dispatcher.Invoke(() => imageBox.Source = preview.ToBitmap().ToBitmapSource());
 
-                            image.Save(pngFilename, new PngEncoder() { BitDepth = PngBitDepth.Bit16 });
+                            ImageFormats format = ImageFormats.PNG16;  
+                            Application.Current.Dispatcher.Invoke(() => format = (ImageFormats)imageFormat.SelectedItem);
+
+                            switch (format)
+                            {
+                                case ImageFormats.PNG16:
+                                    image.Save(filename.Replace("raw", "png"), new PngEncoder() { BitDepth = PngBitDepth.Bit16 });
+                                    break;
+                                case ImageFormats.JPG:
+                                    image.Save(filename.Replace("raw", "jpg"), new SixLabors.ImageSharp.Formats.Jpeg.JpegEncoder());
+                                    break;
+                                case ImageFormats.TIFF8:
+                                    image.Save(filename.Replace("raw", "tiff"), new TiffEncoder { BitsPerPixel = TiffBitsPerPixel.Bit16 });
+                                    break;
+                                default:
+                                    break;
+                            }
                         }
 
                         Application.Current.Dispatcher.Invoke(() => LoadingProgress.Value++);
@@ -114,152 +135,10 @@ namespace PakonImageConverter
                 pixelRowSpan[x] = pixel;
             }
         });
-        private void SetWhiteAndBlackpoint(Image<Rgb48> image)
-        {
-            // Note that for what is dark/bright depends on if the image is positive or negative
-            // Naming here is based on a negative image which means low value is bright after inversion
-            Rgb48 darkest = FindDarkestPixel(image);
-            Rgb48 brightest = FindBrightestPixel(image);
-            Parallel.For(0, image.Height, y =>
-            {
-                Span<Rgb48> pixelRowSpan = image.GetPixelRowSpan(y);
-                for (int x = 0; x < image.Width; x++)
-                {
-                    var pixel = pixelRowSpan[x];
 
-                    /* Set levels
-                     * ChannelValue = 65 535 * ( ( ChannelValue - BrightestValue ) /  ( DarkestValue - BrightestValue ) )
-                     * Again, please note that Dark/Bright is depending on if the image is a positive or negative
-                     * and here I am assuming we are looking at a negative image pre-inversion
-                     */
 
-                    double r = (double)(pixel.R - brightest.R) / (darkest.R - brightest.R);
-                    double g = (double)(pixel.G - brightest.G) / (darkest.G - brightest.G);
-                    double b = (double)(pixel.B - brightest.B) / (darkest.B - brightest.B);
-                    r = Math.Clamp(r, 0, 65_534);
-                    g = Math.Clamp(g, 0, 65_534);
-                    b = Math.Clamp(b, 0, 65_534);
-                    pixel = new Rgb48(  (ushort)(65_534 * r),
-                                        (ushort)(65_534 * g),
-                                        (ushort)(65_534 * b));
 
-                    pixelRowSpan[x] = pixel;
-                } 
-            });
-        }
 
-        private object _locker = new object();
-
-        private Rgb48 FindDarkestPixel(Image<Rgb48> image)
-        {
-            ushort darkestR = 0;
-            ushort darkestG = 0;
-            ushort darkestB = 0;
-            Parallel.For(0, image.Height, y =>
-            {
-                Span<Rgb48> pixelRowSpan = image.GetPixelRowSpan(y);
-                for (int x = 0; x < image.Width; x++)
-                {
-                    if (pixelRowSpan[x].R > darkestR)
-                    {
-                        lock (_locker)
-                        {
-                            if (pixelRowSpan[x].R > darkestR)
-                            {
-                                darkestR = pixelRowSpan[x].R;
-                            }
-                        }
-                    }
-
-                    if (pixelRowSpan[x].G > darkestG)
-                    {
-                        lock (_locker)
-                        {
-                            if (pixelRowSpan[x].G > darkestG)
-                            {
-                                darkestG = pixelRowSpan[x].G;
-                            }
-                        }
-                    }
-
-                    if (pixelRowSpan[x].B > darkestB)
-                    {
-                        lock (_locker)
-                        {
-                            if (pixelRowSpan[x].B > darkestB)
-                            {
-                                darkestB = pixelRowSpan[x].B;
-                            }
-                        }
-                    }
-                }
-            });
-
-            if (BwNegative)
-            {
-                darkestR -= 100; darkestG -= 100; darkestB -= 100;
-                if (darkestR < 0) darkestR = 0;
-                if (darkestG < 0) darkestG = 0;
-                if (darkestB < 0) darkestB = 0;
-            }
-            return new Rgb48(darkestR, darkestG, darkestB);
-        }
-
-        private Rgb48 FindBrightestPixel(Image<Rgb48> image)
-        {
-            ushort brightestR = 65_534;
-            ushort brightestG = 65_534;
-            ushort brightestB = 65_534;
-            Parallel.For(0, image.Height, y =>
-            {
-                Span<Rgb48> pixelRowSpan = image.GetPixelRowSpan(y);
-                for (int x = 0; x < image.Width; x++)
-                {
-                    if (pixelRowSpan[x].R < brightestR)
-                    {
-                        lock (_locker)
-                        {
-                            if (pixelRowSpan[x].R < brightestR)
-                            {
-                                brightestR = pixelRowSpan[x].R;
-                            }
-                        }
-                    }
-
-                    if (pixelRowSpan[x].G < brightestG)
-                    {
-                        lock (_locker)
-                        {
-                            if (pixelRowSpan[x].G < brightestG)
-                            {
-                                brightestG = pixelRowSpan[x].G;
-                            }
-                        }
-                    }
-
-                    if (pixelRowSpan[x].B < brightestB)
-                    {
-                        lock (_locker)
-                        {
-                            if (pixelRowSpan[x].B < brightestB)
-                            {
-                                brightestB = pixelRowSpan[x].B;
-                            }
-                        }
-                    }
-                }
-            });
-
-            // bump it up just a notch
-            if (BwNegative)
-            {
-                brightestR = Math.Clamp(brightestR, (ushort)0, (ushort)65_454);
-                brightestR = Math.Clamp(brightestG, (ushort)0, (ushort)65_454);
-                brightestR = Math.Clamp(brightestB, (ushort)0, (ushort)65_454);
-                brightestR += 80; brightestG += 80; brightestB += 80;
-            }
-            return new Rgb48(brightestR, brightestG, brightestB);
-        }
 
         private static void InterleaveBuffer(byte[] buffer, byte[] interleaved)
         {
