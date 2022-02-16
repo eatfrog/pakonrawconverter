@@ -53,30 +53,34 @@ namespace PakonImageConverter
             // Naming here is based on a negative image which means low value is bright after inversion
             Rgb48 darkest = FindLargestValue(image, bwNegative);
             Rgb48 brightest = FindSmallestValue(image, bwNegative);
-            Parallel.For(0, image.Height, y =>
-            {
-                Span<Rgb48> pixelRowSpan = image.GetPixelRowSpan(y);
-                for (int x = 0; x < image.Width; x++)
+
+            image.ProcessPixelRows(accessor => { 
+
+                for (int y = 0; y < image.Height; y++)
                 {
-                    var pixel = pixelRowSpan[x];
+                    Span<Rgb48> pixelRowSpan = accessor.GetRowSpan(y);
+                    for (int x = 0; x < image.Width; x++)
+                    {
+                        var pixel = pixelRowSpan[x];
 
-                    /* Set levels
-                     * ChannelValue = 65 535 * ( ( ChannelValue - BrightestValue ) /  ( DarkestValue - BrightestValue ) )
-                     * Again, please note that Dark/Bright is depending on if the image is a positive or negative
-                     * and here I am assuming we are looking at a negative image pre-inversion
-                     */
+                        /* Set levels
+                         * ChannelValue = 65 535 * ( ( ChannelValue - BrightestValue ) /  ( DarkestValue - BrightestValue ) )
+                         * Again, please note that Dark/Bright is depending on if the image is a positive or negative
+                         * and here I am assuming we are looking at a negative image pre-inversion
+                         */
 
-                    double r = (double)(pixel.R - brightest.R) / (darkest.R - brightest.R);
-                    double g = (double)(pixel.G - brightest.G) / (darkest.G - brightest.G);
-                    double b = (double)(pixel.B - brightest.B) / (darkest.B - brightest.B);
-                    r = Math.Clamp(r, 0, 1);
-                    g = Math.Clamp(g, 0, 1);
-                    b = Math.Clamp(b, 0, 1);
-                    pixel = new Rgb48((ushort)(65_534 * r),
-                                      (ushort)(65_534 * g),
-                                      (ushort)(65_534 * b));
+                        double r = (double)(pixel.R - brightest.R) / (darkest.R - brightest.R);
+                        double g = (double)(pixel.G - brightest.G) / (darkest.G - brightest.G);
+                        double b = (double)(pixel.B - brightest.B) / (darkest.B - brightest.B);
+                        r = Math.Clamp(r, 0, 1);
+                        g = Math.Clamp(g, 0, 1);
+                        b = Math.Clamp(b, 0, 1);
+                        pixel = new Rgb48((ushort)(65_534 * r),
+                                          (ushort)(65_534 * g),
+                                          (ushort)(65_534 * b));
 
-                    pixelRowSpan[x] = pixel;
+                        pixelRowSpan[x] = pixel;
+                    }
                 }
             });
         }
@@ -90,19 +94,21 @@ namespace PakonImageConverter
             darkestValues.TryAdd("G", 0);
             darkestValues.TryAdd("B", 0);
 
-            Parallel.For(0, image.Height, y =>
-            {
-                Span<Rgb48> pixelRowSpan = image.GetPixelRowSpan(y);
-                for (int x = 0; x < image.Width; x++)
-                {
-                    if (pixelRowSpan[x].G > darkestValues["R"])
-                        darkestValues.TryUpdate("R", pixelRowSpan[x].R, darkestValues["R"]);
+            image.ProcessPixelRows(accessor => { 
+                for (int y = 0; y < image.Height; y++)
+                { 
+                    Span<Rgb48> pixelRowSpan = accessor.GetRowSpan(y);
+                    for (int x = 0; x < image.Width; x++)
+                    {
+                        if (pixelRowSpan[x].G > darkestValues["R"])
+                            darkestValues.TryUpdate("R", pixelRowSpan[x].R, darkestValues["R"]);
 
-                    if (pixelRowSpan[x].G > darkestValues["G"])
-                        darkestValues.TryUpdate("G", pixelRowSpan[x].G, darkestValues["G"]);
+                        if (pixelRowSpan[x].G > darkestValues["G"])
+                            darkestValues.TryUpdate("G", pixelRowSpan[x].G, darkestValues["G"]);
 
-                    if (pixelRowSpan[x].B > darkestValues["B"])
-                        darkestValues.TryUpdate("B", pixelRowSpan[x].B, darkestValues["B"]);
+                        if (pixelRowSpan[x].B > darkestValues["B"])
+                            darkestValues.TryUpdate("B", pixelRowSpan[x].B, darkestValues["B"]);
+                    }
                 }
             });
 
@@ -125,19 +131,21 @@ namespace PakonImageConverter
             smallestValues.TryAdd("G", 65_534);
             smallestValues.TryAdd("B", 65_534);
 
-            Parallel.For(0, image.Height, y =>
-            {
-                Span<Rgb48> pixelRowSpan = image.GetPixelRowSpan(y);
-                for (int x = 0; x < image.Width; x++)
+            image.ProcessPixelRows(accessor => {
+                for (int y = 0; y < image.Height; y++)
                 {
-                    if (pixelRowSpan[x].R < smallestValues["R"])
-                        smallestValues.TryUpdate("R", pixelRowSpan[x].R, smallestValues["R"]);
+                    Span<Rgb48> pixelRowSpan = accessor.GetRowSpan(y);
+                    for (int x = 0; x < image.Width; x++)
+                    {
+                        if (pixelRowSpan[x].R < smallestValues["R"])
+                            smallestValues.TryUpdate("R", pixelRowSpan[x].R, smallestValues["R"]);
 
-                    if (pixelRowSpan[x].G < smallestValues["G"])
-                        smallestValues.TryUpdate("G", pixelRowSpan[x].G, smallestValues["G"]);
+                        if (pixelRowSpan[x].G < smallestValues["G"])
+                            smallestValues.TryUpdate("G", pixelRowSpan[x].G, smallestValues["G"]);
 
-                    if (pixelRowSpan[x].B < smallestValues["B"])
-                        smallestValues.TryUpdate("B", pixelRowSpan[x].B, smallestValues["B"]);
+                        if (pixelRowSpan[x].B < smallestValues["B"])
+                            smallestValues.TryUpdate("B", pixelRowSpan[x].B, smallestValues["B"]);
+                    }
                 }
             });
 

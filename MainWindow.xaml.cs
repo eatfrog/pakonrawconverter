@@ -47,12 +47,15 @@ namespace PakonImageConverter
                     {
                         // The file is in planar mode so RRRRRGGGGGBBBB
                         // TODO: setting for different sized images, works only in 3000*2000 now (non-plus users take note)
+                        // Image size can be figured out by file size: https://alibosworth.github.io/pakon-planar-raw-converter/dimensions/
+                        
                         byte[] buffer = new byte[3000 * 2000 * 6];
                         // But imagesharp wants it in interleaved mode so RGBRGBRGBRGB
                         byte[] interleaved = new byte[3000 * 2000 * 6];
 
                         using StreamReader ms = new StreamReader(filename);
                         var _ = new byte[16];
+                        // TODO: we skip the header but is image size in it? what is in it?
                         ms.BaseStream.Read(_, 0, 16);
 
                         ms.BaseStream.Read(buffer, 0, 3000 * 2000 * 6);
@@ -112,33 +115,31 @@ namespace PakonImageConverter
             }
         }
 
-        private void GammaCorrection(Image<Rgb48> image) => Parallel.For(0, image.Height, y =>
+        private void GammaCorrection(Image<Rgb48> image)
         {
-            Span<Rgb48> pixelRowSpan = image.GetPixelRowSpan(y);
-            for (int x = 0; x < image.Width; x++)
+            image.ProcessPixelRows(accessor =>
             {
-                var pixel = pixelRowSpan[x];
+                for (int y = 0; y < accessor.Height; y++)
+                {
+                    Span<Rgb48> row = accessor.GetRowSpan(y);
+                    foreach (ref Rgb48 pixel in row)
+                    {
+                        // TODO: these variable color balance adjustments should have a setting
+                        double rangeR = (double)pixel.R / 65500;
+                        double correctionR = Math.Pow(rangeR, _gamma * 0.98);
+                        pixel.R = (ushort)(correctionR * 65500);
 
-                // TODO: these variable color balance adjustments should have a setting
-                double rangeR = (double)pixel.R / 65500;
-                double correctionR = Math.Pow(rangeR, _gamma * 0.98);
-                pixel.R = (ushort)(correctionR * 65500);
+                        double rangeG = (double)pixel.G / 65500;
+                        double correctionG = Math.Pow(rangeG, _gamma * 1.02);
+                        pixel.G = (ushort)(correctionG * 65500);
 
-                double rangeG = (double)pixel.G / 65500;
-                double correctionG = Math.Pow(rangeG, _gamma * 1.02);
-                pixel.G = (ushort)(correctionG * 65500);
-
-                double rangeB = (double)pixel.B / 65500;
-                double correctionB = Math.Pow(rangeB, _gamma * 1.03);
-                pixel.B = (ushort)(correctionB * 65500);
-
-                pixelRowSpan[x] = pixel;
-            }
-        });
-
-
-
-
+                        double rangeB = (double)pixel.B / 65500;
+                        double correctionB = Math.Pow(rangeB, _gamma * 1.03);
+                        pixel.B = (ushort)(correctionB * 65500);
+                    }
+                }
+            });
+        }
 
         private static void InterleaveBuffer(byte[] buffer, byte[] interleaved)
         {
