@@ -10,3 +10,5 @@ It is not intended as a one stop shop, but more getting the image into the corre
 The converted files will be saved in the same folder as the raw files are in.
 
 Works corrently with base16 files only, and you have to use the TLXDemoClient software to get the raw files.
+
+![alt text](https://github.com/eatfrog/pakonrawconverter/blob/master/screenshot.JPG?raw=true)
