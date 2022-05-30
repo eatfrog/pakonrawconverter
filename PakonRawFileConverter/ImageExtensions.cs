@@ -9,10 +9,8 @@ using System.Drawing;
 using System.IO;
 using System.Text;
 using System.Threading.Tasks;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
 
-namespace PakonImageConverter
+namespace PakonRawFileLib
 {
     public static class ImageExtensions
     {
@@ -23,28 +21,6 @@ namespace PakonImageConverter
                 image.Save(memoryStream, encoder);
                 return memoryStream.ToArray();
             }
-        }
-
-        public static Bitmap ToBitmap(this byte[] data)
-        {
-            using (var ms = new MemoryStream(data))
-            {
-                return new Bitmap(ms);
-            }
-        }
-
-        public static BitmapSource ToBitmapSource(this Bitmap bmp)
-        {
-            var bitmapData = bmp.LockBits(new System.Drawing.Rectangle(0, 0, bmp.Width, bmp.Height), System.Drawing.Imaging.ImageLockMode.ReadOnly, bmp.PixelFormat);
-
-            var bitmapSource = BitmapSource.Create(
-                bitmapData.Width, bitmapData.Height,
-                bmp.HorizontalResolution, bmp.VerticalResolution,
-                PixelFormats.Bgr24, null,
-                bitmapData.Scan0, bitmapData.Stride * bitmapData.Height, bitmapData.Stride);
-
-            bmp.UnlockBits(bitmapData);
-            return bitmapSource;
         }
 
         public static void SetWhiteAndBlackpoint(this Image<Rgb48> image, bool bwNegative)

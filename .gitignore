@@ -1,3 +1,5 @@
 /.vs
-/bin
-/obj
+bin
+obj
+/WindowsClient/*.user
+/WindowsClient/Properties/PublishProfiles

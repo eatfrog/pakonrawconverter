@@ -11,6 +11,7 @@ using SixLabors.ImageSharp.Formats.Tiff;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
 using Image = SixLabors.ImageSharp.Image;
+using PakonRawFileLib;
 
 namespace PakonImageConverter
 {
@@ -45,26 +46,30 @@ namespace PakonImageConverter
                     // TODO: we are allocating a ton of buffers now, what happens on a low mem machine?
                     Parallel.ForEach(files, filename =>
                     {
+                        using StreamReader ms = new StreamReader(filename);
+
+                        // TODO: What if there is no header saved?
+                        var header = new byte[16];
+
+                        ms.BaseStream.Read(header, 0, 16);
+                        int width = (int)BitConverter.ToUInt32(header, 4);
+                        int height = (int)BitConverter.ToUInt32(header, 8);
+
                         // The file is in planar mode so RRRRRGGGGGBBBB
                         // TODO: setting for different sized images, works only in 3000*2000 now (non-plus users take note)
                         // Image size can be figured out by file size: https://alibosworth.github.io/pakon-planar-raw-converter/dimensions/
-                        
-                        byte[] buffer = new byte[3000 * 2000 * 6];
+
+                        byte[] buffer = new byte[width * height * 6];
                         // But imagesharp wants it in interleaved mode so RGBRGBRGBRGB
-                        byte[] interleaved = new byte[3000 * 2000 * 6];
+                        byte[] interleaved = new byte[width * height * 6];
 
-                        using StreamReader ms = new StreamReader(filename);
-                        var _ = new byte[16];
-                        // TODO: we skip the header but is image size in it? what is in it?
-                        ms.BaseStream.Read(_, 0, 16);
-
-                        ms.BaseStream.Read(buffer, 0, 3000 * 2000 * 6);
+                        ms.BaseStream.Read(buffer, 0, width * height * 6);
 
                         Application.Current.Dispatcher.Invoke(() => LoadingProgress.Value++);
 
-                        InterleaveBuffer(buffer, interleaved);
+                        InterleaveBuffer(width, height, buffer, interleaved);
 
-                        using Image<Rgb48> image = Image.LoadPixelData<Rgb48>(interleaved, 3000, 2000);
+                        using Image<Rgb48> image = Image.LoadPixelData<Rgb48>(interleaved, width, height);
 
                         image.SetWhiteAndBlackpoint(BwNegative);
 
@@ -141,24 +146,24 @@ namespace PakonImageConverter
             });
         }
 
-        private static void InterleaveBuffer(byte[] buffer, byte[] interleaved)
+        private static void InterleaveBuffer(int width, int height, byte[] buffer, byte[] interleaved)
         {
             int pixelSize = 6;
 
             // Interleave the buffer
-            for (int i = 0; i != 3000 * 2000 * 2; i += 2)
+            for (int i = 0; i != width * height * 2; i += 2)
             {
                 // R
                 interleaved[i / 2 * pixelSize + 0] = buffer[i];
                 interleaved[i / 2 * pixelSize + 1] = buffer[i + 1];
 
                 // G - we got to jump over all R bytes first
-                interleaved[i / 2 * pixelSize + 2] = buffer[(2 * 3000 * 2000) + i];
-                interleaved[i / 2 * pixelSize + 3] = buffer[(2 * 3000 * 2000) + i + 1];
+                interleaved[i / 2 * pixelSize + 2] = buffer[(2 * width * height) + i];
+                interleaved[i / 2 * pixelSize + 3] = buffer[(2 * width * height) + i + 1];
 
                 // B - we got to jump over all G bytes first
-                interleaved[i / 2 * pixelSize + 4] = buffer[(2 * 2 * 3000 * 2000) + i];
-                interleaved[i / 2 * pixelSize + 5] = buffer[(2 * 2 * 3000 * 2000) + i + 1];
+                interleaved[i / 2 * pixelSize + 4] = buffer[(2 * 2 * width * height) + i];
+                interleaved[i / 2 * pixelSize + 5] = buffer[(2 * 2 * width * height) + i + 1];
             }
         }
 
