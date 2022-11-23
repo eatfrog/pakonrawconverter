@@ -56,8 +56,6 @@ namespace PakonImageConverter
                         int height = (int)BitConverter.ToUInt32(header, 8);
 
                         // The file is in planar mode so RRRRRGGGGGBBBB
-                        // TODO: setting for different sized images, works only in 3000*2000 now (non-plus users take note)
-                        // Image size can be figured out by file size: https://alibosworth.github.io/pakon-planar-raw-converter/dimensions/
 
                         byte[] buffer = new byte[width * height * 6];
                         // But imagesharp wants it in interleaved mode so RGBRGBRGBRGB
