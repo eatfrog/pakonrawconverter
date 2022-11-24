@@ -21,7 +21,7 @@ namespace PakonImageConverter
     public partial class MainWindow : Window
     {
         private double _gamma = 0.4545454545454545;
-        public bool BwNegative { get; set; }
+        public bool isBwNegative { get; set; }
         public MainWindow()
         {
             InitializeComponent();
@@ -69,18 +69,31 @@ namespace PakonImageConverter
 
                         using Image<Rgb48> image = Image.LoadPixelData<Rgb48>(interleaved, width, height);
 
-                        image.SetWhiteAndBlackpoint(BwNegative);
+                        (Rgb48, Rgb48) darkestAndBrightest = image.SetWhiteAndBlackpoint(isBwNegative);
+
+
+                        Application.Current.Dispatcher.Invoke(() => {
+                            var brightest = isBwNegative ? darkestAndBrightest.Item1 : darkestAndBrightest.Item2;
+                            var darkest = isBwNegative ? darkestAndBrightest.Item2 : darkestAndBrightest.Item1;
+
+                            darkestImageInfo.Content = $"Darkest R: {darkest.R} \r\n";
+                            darkestImageInfo.Content += $"Darkest G: {darkest.G} \r\n";
+                            darkestImageInfo.Content += $"Darkest B: {darkest.B} \r\n";
+                            brightestImageInfo.Content = $"Brightest R: {brightest.R} \r\n";
+                            brightestImageInfo.Content += $"Brightest G: {brightest.G} \r\n";
+                            brightestImageInfo.Content += $"Brightest B: {brightest.B} \r\n";
+                        });
 
                         GammaCorrection(image);
 
                         // TODO: folder setting
                         // TODO: preview before save
 
-                        if (BwNegative)
+                        if (isBwNegative)
                         {
                             image.Mutate(x => x.Invert()); // We probably want separate adjustments for bw raws
                             image.Mutate(x => x.Saturate(0f)); // TODO: setting                            
-                            image.Save(filename.Replace("raw", "png"), new PngEncoder() { ColorType = PngColorType.Grayscale, BitDepth = PngBitDepth.Bit16 });
+                            image.Save(filename.Replace(".raw", ".png"), new PngEncoder() { ColorType = PngColorType.Grayscale, BitDepth = PngBitDepth.Bit16 });
 
                             var preview = image.ToArray(new BmpEncoder());
                             Application.Current.Dispatcher.Invoke(() => imageBox.Source = preview.ToBitmap().ToBitmapSource());
@@ -98,13 +111,13 @@ namespace PakonImageConverter
                             switch (format)
                             {
                                 case ImageFormats.PNG16:
-                                    image.Save(filename.Replace("raw", "png"), new PngEncoder() { BitDepth = PngBitDepth.Bit16 });
+                                    image.Save(filename.Replace(".raw", ".png"), new PngEncoder() { BitDepth = PngBitDepth.Bit16 });
                                     break;
                                 case ImageFormats.JPG:
-                                    image.Save(filename.Replace("raw", "jpg"), new SixLabors.ImageSharp.Formats.Jpeg.JpegEncoder());
+                                    image.Save(filename.Replace(".raw", ".jpg"), new SixLabors.ImageSharp.Formats.Jpeg.JpegEncoder());
                                     break;
                                 case ImageFormats.TIFF8:
-                                    image.Save(filename.Replace("raw", "tiff"), new TiffEncoder { BitsPerPixel = TiffBitsPerPixel.Bit16 });
+                                    image.Save(filename.Replace(".raw", ".tiff"), new TiffEncoder { BitsPerPixel = TiffBitsPerPixel.Bit16 });
                                     break;
                                 default:
                                     break;

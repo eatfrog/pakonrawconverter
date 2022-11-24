@@ -23,7 +23,7 @@ namespace PakonRawFileLib
             }
         }
 
-        public static void SetWhiteAndBlackpoint(this Image<Rgb48> image, bool bwNegative)
+        public static (Rgb48, Rgb48) SetWhiteAndBlackpoint(this Image<Rgb48> image, bool bwNegative)
         {
             // Note that for what is dark/bright depends on if the image is positive or negative
             // Naming here is based on a negative image which means low value is bright after inversion
@@ -59,6 +59,8 @@ namespace PakonRawFileLib
                     }
                 }
             });
+
+            return (darkest, brightest);
         }
 
         // If pos image, 0 is black and 65535 is white
@@ -76,7 +78,7 @@ namespace PakonRawFileLib
                     Span<Rgb48> pixelRowSpan = accessor.GetRowSpan(y);
                     for (int x = 0; x < image.Width; x++)
                     {
-                        if (pixelRowSpan[x].G > darkestValues["R"])
+                        if (pixelRowSpan[x].R > darkestValues["R"])
                             darkestValues.TryUpdate("R", pixelRowSpan[x].R, darkestValues["R"]);
 
                         if (pixelRowSpan[x].G > darkestValues["G"])
