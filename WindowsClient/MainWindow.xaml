@@ -18,7 +18,7 @@
         <Label x:Name="gammaLabel" Content="Gamma conversion: 2,2" HorizontalAlignment="Left" Margin="10,338,0,0" VerticalAlignment="Top"/>
         <Image x:Name="imageBox" HorizontalAlignment="Left" Height="270" Margin="194,110,0,0" VerticalAlignment="Top" Width="439"/>
         <ProgressBar x:Name="LoadingProgress" HorizontalAlignment="Left" Height="10" Margin="611,413,0,0" VerticalAlignment="Top" Width="179"/>
-        <CheckBox x:Name="checkBox" Content="Bw Negative" HorizontalAlignment="Left" Margin="28,85,0,0" VerticalAlignment="Top" IsChecked="{Binding BwNegative}"/>
+        <CheckBox x:Name="checkBox" Content="Bw Negative" HorizontalAlignment="Left" Margin="28,85,0,0" VerticalAlignment="Top" IsChecked="{Binding isBwNegative}"/>
         <ComboBox x:Name="imageFormat"  HorizontalAlignment="Left" Margin="28,33,0,0" VerticalAlignment="Top" Width="120" />
         <Label Content="Output format&#xD;&#xA;" HorizontalAlignment="Left" Margin="23,12,0,0" VerticalAlignment="Top" RenderTransformOrigin="0.264,-0.255" Width="108"/>
         <Label x:Name="darkestImageInfo" Content="Image info" HorizontalAlignment="Left" Margin="10,375,0,0" VerticalAlignment="Top" Height="63" Width="95"/>
