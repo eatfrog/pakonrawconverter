@@ -21,14 +21,31 @@ namespace PakonImageConverter
     public partial class MainWindow : Window
     {
         private double _gamma = 0.4545454545454545;
-        public bool isBwNegative { get; set; }
+        private float _contrast = 1.08f;
+        private float _saturation = 1.08f;
+        private bool _isBwImage { get; set; }
+
         public MainWindow()
         {
             InitializeComponent();
-            checkBox.DataContext = this;
+            BwNegativeCheckbox.DataContext = this;
             DataContext = this;
             imageFormat.ItemsSource = Enum.GetValues(typeof(ImageFormats)).Cast<ImageFormats>();
             imageFormat.SelectedIndex = 0;
+            SetValuesFromSettings();
+        }
+
+        private void SetValuesFromSettings()
+        {
+            _isBwImage = WindowsClient.Properties.Settings.Default.BwImage;
+            BwNegativeCheckbox.IsChecked = _isBwImage;
+            _contrast = WindowsClient.Properties.Settings.Default.Contrast;
+            contrastSlider.Value = _contrast / 2;
+            contrastLabel.Content = "Contrast: " + String.Format("{0:0}%", _contrast * 100);
+            _saturation = WindowsClient.Properties.Settings.Default.Saturation;
+            saturationSlider.Value = _saturation / 2;
+            saturationLabel.Content = "Saturation: " + String.Format("{0:0}%", _saturation * 100);
+            _gamma = WindowsClient.Properties.Settings.Default.Gamma;
         }
 
         private void ImagePanel_Drop(object sender, DragEventArgs e)
@@ -43,92 +60,95 @@ namespace PakonImageConverter
                 LoadingProgress.Value = 0;
                 Task.Run(() =>
                 {
+                    ImageFormats format = ImageFormats.PNG16;
+                    Application.Current.Dispatcher.Invoke(() => format = (ImageFormats)imageFormat.SelectedItem);
+
                     // TODO: we are allocating a ton of buffers now, what happens on a low mem machine?
                     Parallel.ForEach(files, filename =>
                     {
-                        using StreamReader ms = new StreamReader(filename);
+                        Image<Rgb48> image = ProcessImage(filename, format);
 
-                        // TODO: What if there is no header saved?
-                        var header = new byte[16];
-
-                        ms.BaseStream.Read(header, 0, 16);
-                        int width = (int)BitConverter.ToUInt32(header, 4);
-                        int height = (int)BitConverter.ToUInt32(header, 8);
-
-                        // The file is in planar mode so RRRRRGGGGGBBBB
-
-                        byte[] buffer = new byte[width * height * 6];
-                        // But imagesharp wants it in interleaved mode so RGBRGBRGBRGB
-                        byte[] interleaved = new byte[width * height * 6];
-
-                        ms.BaseStream.Read(buffer, 0, width * height * 6);
-
-                        Application.Current.Dispatcher.Invoke(() => LoadingProgress.Value++);
-
-                        InterleaveBuffer(width, height, buffer, interleaved);
-
-                        using Image<Rgb48> image = Image.LoadPixelData<Rgb48>(interleaved, width, height);
-
-                        (Rgb48, Rgb48) darkestAndBrightest = image.SetWhiteAndBlackpoint(isBwNegative);
-
-
-                        Application.Current.Dispatcher.Invoke(() => {
-                            var brightest = isBwNegative ? darkestAndBrightest.Item1 : darkestAndBrightest.Item2;
-                            var darkest = isBwNegative ? darkestAndBrightest.Item2 : darkestAndBrightest.Item1;
-
-                            darkestImageInfo.Content = $"Darkest R: {darkest.R} \r\n";
-                            darkestImageInfo.Content += $"Darkest G: {darkest.G} \r\n";
-                            darkestImageInfo.Content += $"Darkest B: {darkest.B} \r\n";
-                            brightestImageInfo.Content = $"Brightest R: {brightest.R} \r\n";
-                            brightestImageInfo.Content += $"Brightest G: {brightest.G} \r\n";
-                            brightestImageInfo.Content += $"Brightest B: {brightest.B} \r\n";
-                        });
-
-                        GammaCorrection(image);
-
-                        // TODO: folder setting
-                        // TODO: preview before save
-
-                        if (isBwNegative)
-                        {
-                            image.Mutate(x => x.Invert()); // We probably want separate adjustments for bw raws
-                            image.Mutate(x => x.Saturate(0f)); // TODO: setting                            
-                            image.Save(filename.Replace(".raw", ".png"), new PngEncoder() { ColorType = PngColorType.Grayscale, BitDepth = PngBitDepth.Bit16 });
-
-                            var preview = image.ToArray(new BmpEncoder());
-                            Application.Current.Dispatcher.Invoke(() => imageBox.Source = preview.ToBitmap().ToBitmapSource());
-                        }
-                        else
-                        {
-                            image.Mutate(x => x.Contrast(1.08f)); // TODO: setting
-                            image.Mutate(x => x.Saturate(1.08f)); // TODO: setting
-                            var preview = image.ToArray(new BmpEncoder());
-                            Application.Current.Dispatcher.Invoke(() => imageBox.Source = preview.ToBitmap().ToBitmapSource());
-
-                            ImageFormats format = ImageFormats.PNG16;  
-                            Application.Current.Dispatcher.Invoke(() => format = (ImageFormats)imageFormat.SelectedItem);
-
-                            switch (format)
-                            {
-                                case ImageFormats.PNG16:
-                                    image.Save(filename.Replace(".raw", ".png"), new PngEncoder() { BitDepth = PngBitDepth.Bit16 });
-                                    break;
-                                case ImageFormats.JPG:
-                                    image.Save(filename.Replace(".raw", ".jpg"), new SixLabors.ImageSharp.Formats.Jpeg.JpegEncoder());
-                                    break;
-                                case ImageFormats.TIFF8:
-                                    image.Save(filename.Replace(".raw", ".tiff"), new TiffEncoder { BitsPerPixel = TiffBitsPerPixel.Bit16 });
-                                    break;
-                                default:
-                                    break;
-                            }
-                        }
-
+                        var preview = image.ToArray(new BmpEncoder());
+                        Application.Current.Dispatcher.Invoke(() => imageBox.Source = preview.ToBitmap().ToBitmapSource());
                         Application.Current.Dispatcher.Invoke(() => LoadingProgress.Value++);
                     });
                     SystemSounds.Beep.Play();
                 });
             }
+        }
+
+        private Image<Rgb48> ProcessImage(string filename, ImageFormats format)
+        {
+            StreamReader ms = new StreamReader(filename);
+
+            // TODO: What if there is no header saved?
+            var header = new byte[16];
+
+            ms.BaseStream.Read(header, 0, 16);
+            int width = (int)BitConverter.ToUInt32(header, 4);
+            int height = (int)BitConverter.ToUInt32(header, 8);
+
+            // The file is in planar mode so RRRRRGGGGGBBBB
+
+            byte[] buffer = new byte[width * height * 6];
+            // But imagesharp wants it in interleaved mode so RGBRGBRGBRGB
+            byte[] interleaved = new byte[width * height * 6];
+
+            ms.BaseStream.Read(buffer, 0, width * height * 6);
+
+            Application.Current.Dispatcher.Invoke(() => LoadingProgress.Value++);
+
+            InterleaveBuffer(width, height, buffer, interleaved);
+            var image = Image.LoadPixelData<Rgb48>(interleaved, width, height);
+            (Rgb48, Rgb48) darkestAndBrightest = image.SetWhiteAndBlackpoint(_isBwImage);
+
+            Application.Current.Dispatcher.Invoke(() =>
+            {
+                var brightest = _isBwImage ? darkestAndBrightest.Item1 : darkestAndBrightest.Item2;
+                var darkest = _isBwImage ? darkestAndBrightest.Item2 : darkestAndBrightest.Item1;
+
+                darkestImageInfo.Content = $"Darkest R: {darkest.R} \r\n";
+                darkestImageInfo.Content += $"Darkest G: {darkest.G} \r\n";
+                darkestImageInfo.Content += $"Darkest B: {darkest.B} \r\n";
+                brightestImageInfo.Content = $"Brightest R: {brightest.R} \r\n";
+                brightestImageInfo.Content += $"Brightest G: {brightest.G} \r\n";
+                brightestImageInfo.Content += $"Brightest B: {brightest.B} \r\n";
+            });
+
+            GammaCorrection(image);
+
+            // TODO: folder setting
+            // TODO: preview before save
+
+            if (_isBwImage)
+            {
+                image.Mutate(x => x.Invert()); // We probably want separate adjustments for bw raws
+                image.Mutate(x => x.Saturate(0f));                         
+                image.Save(filename.Replace(".raw", ".png"), new PngEncoder() { ColorType = PngColorType.Grayscale, BitDepth = PngBitDepth.Bit16 });
+            }
+            else
+            {
+                image.Mutate(x => x.Contrast(_contrast));
+                image.Mutate(x => x.Saturate(_saturation)); 
+
+
+                switch (format)
+                {
+                    case ImageFormats.PNG16:
+                        image.Save(filename.Replace(".raw", ".png"), new PngEncoder() { BitDepth = PngBitDepth.Bit16 });
+                        break;
+                    case ImageFormats.JPG:
+                        image.Save(filename.Replace(".raw", ".jpg"), new SixLabors.ImageSharp.Formats.Jpeg.JpegEncoder());
+                        break;
+                    case ImageFormats.TIFF8:
+                        image.Save(filename.Replace(".raw", ".tiff"), new TiffEncoder { BitsPerPixel = TiffBitsPerPixel.Bit16 });
+                        break;
+                    default:
+                        break;
+                }
+            }
+
+            return image;
         }
 
         private void GammaCorrection(Image<Rgb48> image)
@@ -178,12 +198,47 @@ namespace PakonImageConverter
             }
         }
 
-        private void Slider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        private void GammaSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
             _gamma = e.NewValue;
             if (gammaLabel != null)
-                gammaLabel.Content = "Gamma conversion: " + String.Format("{0:0.00}", 1 / e.NewValue);
+                gammaLabel.Content = "Gamma: " + String.Format("{0:0.00}", 1 / e.NewValue);
         }
-        
+
+        private void ContrastSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            _contrast = (float)e.NewValue * 2;
+            if (contrastLabel != null)
+                contrastLabel.Content = "Contrast: " + String.Format("{0:0}%", e.NewValue * 2 * 100);
+        }
+
+        private void SaturationSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            _saturation = (float)(e.NewValue * 2);
+            if (saturationLabel != null)
+                saturationLabel.Content = "Saturation: " + String.Format("{0:0}%", e.NewValue * 2 * 100);
+        }
+
+        private void checkBox_Click(object sender, RoutedEventArgs e)
+        {
+            saturationSlider.IsEnabled = !_isBwImage;
+            if (_isBwImage)
+            {
+                if (saturationLabel != null)
+                    saturationLabel.Content = "Saturation: -";
+            }
+            else
+                saturationLabel.Content = "Saturation: " + String.Format("{0:0}%", _saturation * 100);
+
+        }
+
+        private void Window_Closed(object sender, EventArgs e)
+        {
+            WindowsClient.Properties.Settings.Default.BwImage = _isBwImage;
+            WindowsClient.Properties.Settings.Default.Contrast = _contrast;
+            WindowsClient.Properties.Settings.Default.Saturation = _saturation;
+            WindowsClient.Properties.Settings.Default.Gamma = (float)_gamma;
+            WindowsClient.Properties.Settings.Default.Save();
+        }
     }
 }

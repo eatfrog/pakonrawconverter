@@ -1,0 +1,18 @@
+﻿<?xml version='1.0' encoding='utf-8'?>
+<SettingsFile xmlns="http://schemas.microsoft.com/VisualStudio/2004/01/settings" CurrentProfile="(Default)" GeneratedClassNamespace="WindowsClient.Properties" GeneratedClassName="Settings">
+  <Profiles />
+  <Settings>
+    <Setting Name="BwImage" Type="System.Boolean" Scope="User">
+      <Value Profile="(Default)">False</Value>
+    </Setting>
+    <Setting Name="Contrast" Type="System.Single" Scope="User">
+      <Value Profile="(Default)">1.04</Value>
+    </Setting>
+    <Setting Name="Saturation" Type="System.Single" Scope="User">
+      <Value Profile="(Default)">1.04</Value>
+    </Setting>
+    <Setting Name="Gamma" Type="System.Single" Scope="User">
+      <Value Profile="(Default)">2.2</Value>
+    </Setting>
+  </Settings>
+</SettingsFile>
