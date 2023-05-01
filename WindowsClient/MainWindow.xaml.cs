@@ -12,6 +12,7 @@ using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
 using Image = SixLabors.ImageSharp.Image;
 using PakonRawFileLib;
+using System.Windows.Controls;
 
 namespace PakonImageConverter
 {
@@ -28,7 +29,7 @@ namespace PakonImageConverter
         public MainWindow()
         {
             InitializeComponent();
-            BwNegativeCheckbox.DataContext = this;
+            BwNegativeCheckbox.DataContext = this;           
             DataContext = this;
             imageFormat.ItemsSource = Enum.GetValues(typeof(ImageFormats)).Cast<ImageFormats>();
             imageFormat.SelectedIndex = 0;
@@ -87,6 +88,8 @@ namespace PakonImageConverter
             ms.BaseStream.Read(header, 0, 16);
             int width = (int)BitConverter.ToUInt32(header, 4);
             int height = (int)BitConverter.ToUInt32(header, 8);
+
+            if (width > 5000 || height > 5000) throw new InvalidOperationException("You are probably not processing a pakon raw file");
 
             // The file is in planar mode so RRRRRGGGGGBBBB
 
@@ -221,6 +224,9 @@ namespace PakonImageConverter
 
         private void checkBox_Click(object sender, RoutedEventArgs e)
         {
+            var newVal = ((CheckBox)sender).IsChecked;
+            if (newVal.HasValue)
+                _isBwImage = newVal.Value;
             saturationSlider.IsEnabled = !_isBwImage;
             if (_isBwImage)
             {
