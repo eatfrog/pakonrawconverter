@@ -1,6 +1,6 @@
 # Pakon Raw Converter
 
-Windows only, Net 7.0 [runtime needed](https://dotnet.microsoft.com/download/dotnet-core/current/runtime). 
+Windows only currently, Net 8.0 [runtime needed](https://dotnet.microsoft.com/download/dotnet-core/current/runtime). 
 
 Image converter from the Pakon scanner raw format. Drag and drop pakon raw files into the window and it will convert them into 16bit png files.
 
