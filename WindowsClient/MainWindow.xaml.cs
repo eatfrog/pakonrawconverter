@@ -70,7 +70,11 @@ namespace PakonImageConverter
                     // TODO: we are allocating a ton of buffers now, what happens on a low mem machine?
                     Parallel.ForEach(files, filename =>
                     {
-                        Image<Rgb48> image = ProcessImage(filename, format);
+                        var processor = new PakonRawProcessor();
+                        Image<Rgb48> image = processor.ProcessImage(filename, _isBwImage, _gamma, _contrast, _saturation);
+
+                        Application.Current.Dispatcher.Invoke(() => LoadingProgress.Value++);
+                        Application.Current.Dispatcher.Invoke(() => UpdateHistograms(image));
 
                         var preview = image.ToArray(new BmpEncoder());
                         Application.Current.Dispatcher.Invoke(() => imageBox.Source = preview.ToBitmap().ToBitmapSource());
@@ -81,70 +85,7 @@ namespace PakonImageConverter
             }
         }
 
-        private Image<Rgb48> ProcessImage(string filename, ImageFormats format)
-        {
-            StreamReader ms = new StreamReader(filename);
-
-            // TODO: What if there is no header saved?
-            var header = new byte[16];
-
-            ms.BaseStream.Read(header, 0, 16);
-            int width = (int)BitConverter.ToUInt32(header, 4);
-            int height = (int)BitConverter.ToUInt32(header, 8);
-
-            if (width > 5000 || height > 5000) throw new InvalidOperationException("You are probably not processing a pakon raw file");
-
-            // The file is in planar mode so RRRRRGGGGGBBBB
-
-            byte[] buffer = new byte[width * height * 6];
-            // But imagesharp wants it in interleaved mode so RGBRGBRGBRGB
-            byte[] interleaved = new byte[width * height * 6];
-
-            ms.BaseStream.Read(buffer, 0, width * height * 6);
-
-            Application.Current.Dispatcher.Invoke(() => LoadingProgress.Value++);
-
-            InterleaveBuffer(width, height, buffer, interleaved);
-            var image = Image.LoadPixelData<Rgb48>(interleaved, width, height);
-            image.SetWhiteAndBlackpoint(_isBwImage);
-
-            Application.Current.Dispatcher.Invoke(() => UpdateHistograms(image));
-
-            GammaCorrection(image);
-
-            // TODO: folder setting
-            // TODO: preview before save
-
-            if (_isBwImage)
-            {
-                image.Mutate(x => x.Invert()); // We probably want separate adjustments for bw raws
-                image.Mutate(x => x.Saturate(0f));                         
-                image.Save(filename.Replace(".raw", ".png"), new PngEncoder() { ColorType = PngColorType.Grayscale, BitDepth = PngBitDepth.Bit16 });
-            }
-            else
-            {
-                image.Mutate(x => x.Contrast(_contrast));
-                image.Mutate(x => x.Saturate(_saturation)); 
-
-
-                switch (format)
-                {
-                    case ImageFormats.PNG16:
-                        image.Save(filename.Replace(".raw", ".png"), new PngEncoder() { BitDepth = PngBitDepth.Bit16 });
-                        break;
-                    case ImageFormats.JPG:
-                        image.Save(filename.Replace(".raw", ".jpg"), new SixLabors.ImageSharp.Formats.Jpeg.JpegEncoder());
-                        break;
-                    case ImageFormats.TIFF8:
-                        image.Save(filename.Replace(".raw", ".tiff"), new TiffEncoder { BitsPerPixel = TiffBitsPerPixel.Bit16 });
-                        break;
-                    default:
-                        break;
-                }
-            }
-
-            return image;
-        }
+        
 
         private void UpdateHistograms(Image<Rgb48> image)
         {
@@ -211,52 +152,7 @@ namespace PakonImageConverter
             }
         }
 
-        private void GammaCorrection(Image<Rgb48> image)
-        {
-            image.ProcessPixelRows(accessor =>
-            {
-                for (int y = 0; y < accessor.Height; y++)
-                {
-                    Span<Rgb48> row = accessor.GetRowSpan(y);
-                    foreach (ref Rgb48 pixel in row)
-                    {
-                        // TODO: these variable color balance adjustments should have a setting
-                        double rangeR = (double)pixel.R / 65500;
-                        double correctionR = Math.Pow(rangeR, _gamma * 0.98);
-                        pixel.R = (ushort)(correctionR * 65500);
-
-                        double rangeG = (double)pixel.G / 65500;
-                        double correctionG = Math.Pow(rangeG, _gamma * 1.02);
-                        pixel.G = (ushort)(correctionG * 65500);
-
-                        double rangeB = (double)pixel.B / 65500;
-                        double correctionB = Math.Pow(rangeB, _gamma * 1.03);
-                        pixel.B = (ushort)(correctionB * 65500);
-                    }
-                }
-            });
-        }
-
-        private static void InterleaveBuffer(int width, int height, byte[] buffer, byte[] interleaved)
-        {
-            int pixelSize = 6;
-
-            // Interleave the buffer
-            for (int i = 0; i != width * height * 2; i += 2)
-            {
-                // R
-                interleaved[i / 2 * pixelSize + 0] = buffer[i];
-                interleaved[i / 2 * pixelSize + 1] = buffer[i + 1];
-
-                // G - we got to jump over all R bytes first
-                interleaved[i / 2 * pixelSize + 2] = buffer[(2 * width * height) + i];
-                interleaved[i / 2 * pixelSize + 3] = buffer[(2 * width * height) + i + 1];
-
-                // B - we got to jump over all G bytes first
-                interleaved[i / 2 * pixelSize + 4] = buffer[(2 * 2 * width * height) + i];
-                interleaved[i / 2 * pixelSize + 5] = buffer[(2 * 2 * width * height) + i + 1];
-            }
-        }
+        
 
         private void GammaSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
