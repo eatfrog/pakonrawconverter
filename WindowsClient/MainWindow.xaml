@@ -5,7 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:PakonImageConverter"
         mc:Ignorable="d"
-        Title="Pakon Image Converter" Height="486" Width="820"
+        Title="Pakon Image Converter" Height="516" Width="820"
         ResizeMode="NoResize"
         DataContext="{Binding RelativeSource={RelativeSource Self}}"
         Closed="Window_Closed">
@@ -19,12 +19,16 @@
         <Slider x:Name="slider" HorizontalAlignment="Left" Margin="28,131,0,0" VerticalAlignment="Top" Width="19" ValueChanged="GammaSlider_ValueChanged" Height="202" Orientation="Vertical" Maximum="1" Panel.ZIndex="-8" Value="0.4545454545454545"/>
         <Label x:Name="gammaLabel" Content="Gamma: 2,2" HorizontalAlignment="Left" Margin="4,338,0,0" VerticalAlignment="Top" FontSize="10"/>
         <Image x:Name="imageBox" HorizontalAlignment="Left" Height="270" Margin="254,111,0,0" VerticalAlignment="Top" Width="439"/>
-        <ProgressBar x:Name="LoadingProgress" HorizontalAlignment="Left" Height="10" Margin="329,428,0,0" VerticalAlignment="Top" Width="252"/>
+        <ProgressBar x:Name="LoadingProgress" HorizontalAlignment="Left" Height="10" Margin="329,458,0,0" VerticalAlignment="Top" Width="252"/>
         <CheckBox x:Name="BwNegativeCheckbox" Content="Bw Negative" HorizontalAlignment="Left" Margin="28,85,0,0" VerticalAlignment="Top" IsChecked="{Binding _isBwImage}" Click="checkBox_Click"/>
         <ComboBox x:Name="imageFormat"  HorizontalAlignment="Left" Margin="28,33,0,0" VerticalAlignment="Top" Width="120" />
         <Label Content="Output format&#xD;&#xA;" HorizontalAlignment="Left" Margin="23,12,0,0" VerticalAlignment="Top" RenderTransformOrigin="0.264,-0.255" Width="108"/>
-        <Label x:Name="darkestImageInfo" Content="Image info" HorizontalAlignment="Left" Margin="10,375,0,0" VerticalAlignment="Top" Height="63" Width="95"/>
-        <Label x:Name="brightestImageInfo" Content="" HorizontalAlignment="Left" Margin="134,375,0,0" VerticalAlignment="Top" Height="63" Width="120"/>
+        <Label x:Name="redLabel" Content="Red" HorizontalAlignment="Left" Margin="10,344,0,0" VerticalAlignment="Top"/>
+        <Canvas x:Name="redHistogram" HorizontalAlignment="Left" Height="80" Margin="10,365,0,0" VerticalAlignment="Top" Width="256" Background="Transparent"/>
+        <Label x:Name="greenLabel" Content="Green" HorizontalAlignment="Left" Margin="276,344,0,0" VerticalAlignment="Top"/>
+        <Canvas x:Name="greenHistogram" HorizontalAlignment="Left" Height="80" Margin="276,365,0,0" VerticalAlignment="Top" Width="256" Background="Transparent"/>
+        <Label x:Name="blueLabel" Content="Blue" HorizontalAlignment="Left" Margin="542,344,0,0" VerticalAlignment="Top"/>
+        <Canvas x:Name="blueHistogram" HorizontalAlignment="Left" Height="80" Margin="542,365,0,0" VerticalAlignment="Top" Width="256" Background="Transparent"/>
         <Slider x:Name="contrastSlider" HorizontalAlignment="Left" Margin="104,131,0,0" VerticalAlignment="Top" Width="23" ValueChanged="ContrastSlider_ValueChanged" Height="202" Orientation="Vertical" Maximum="1" Panel.ZIndex="-8" Value="0.54"/>
         <Label x:Name="contrastLabel" Content="Contrast: 108%" HorizontalAlignment="Left" Margin="66,338,0,0" VerticalAlignment="Top" FontSize="10" />
         <Label x:Name="saturationLabel" Content="Saturation: 108%" HorizontalAlignment="Left" Margin="143,338,0,0" VerticalAlignment="Top" FontSize="10" />

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Linq;
 using System.Media;
@@ -13,6 +13,9 @@ using SixLabors.ImageSharp.Processing;
 using Image = SixLabors.ImageSharp.Image;
 using PakonRawFileLib;
 using System.Windows.Controls;
+using System.Windows.Media;
+using System.Windows.Shapes;
+using System.Windows.Media.Imaging;
 
 namespace PakonImageConverter
 {
@@ -103,20 +106,9 @@ namespace PakonImageConverter
 
             InterleaveBuffer(width, height, buffer, interleaved);
             var image = Image.LoadPixelData<Rgb48>(interleaved, width, height);
-            (Rgb48, Rgb48) darkestAndBrightest = image.SetWhiteAndBlackpoint(_isBwImage);
+            image.SetWhiteAndBlackpoint(_isBwImage);
 
-            Application.Current.Dispatcher.Invoke(() =>
-            {
-                var brightest = _isBwImage ? darkestAndBrightest.Item1 : darkestAndBrightest.Item2;
-                var darkest = _isBwImage ? darkestAndBrightest.Item2 : darkestAndBrightest.Item1;
-
-                darkestImageInfo.Content = $"Darkest R: {darkest.R} \r\n";
-                darkestImageInfo.Content += $"Darkest G: {darkest.G} \r\n";
-                darkestImageInfo.Content += $"Darkest B: {darkest.B} \r\n";
-                brightestImageInfo.Content = $"Brightest R: {brightest.R} \r\n";
-                brightestImageInfo.Content += $"Brightest G: {brightest.G} \r\n";
-                brightestImageInfo.Content += $"Brightest B: {brightest.B} \r\n";
-            });
+            Application.Current.Dispatcher.Invoke(() => UpdateHistograms(image));
 
             GammaCorrection(image);
 
@@ -152,6 +144,71 @@ namespace PakonImageConverter
             }
 
             return image;
+        }
+
+        private void UpdateHistograms(Image<Rgb48> image)
+        {
+            if (_isBwImage)
+            {
+                var histogram = CalculateHistogram(image, true);
+                DrawHistogram(redHistogram, histogram[0], Colors.Gray);
+            }
+            else
+            {
+                var histograms = CalculateHistogram(image, false);
+                DrawHistogram(redHistogram, histograms[0], Colors.DarkRed);
+                DrawHistogram(greenHistogram, histograms[1], Colors.DarkGreen);
+                DrawHistogram(blueHistogram, histograms[2], Colors.DarkBlue);
+            }
+        }
+
+        private int[][] CalculateHistogram(Image<Rgb48> image, bool isGrayScale)
+        {
+            var histograms = new int[isGrayScale ? 1 : 3][];
+            for (int i = 0; i < histograms.Length; i++)
+            {
+                histograms[i] = new int[256];
+            }
+
+            image.ProcessPixelRows(accessor =>
+            {
+                for (int y = 0; y < accessor.Height; y++)
+                {
+                    Span<Rgb48> row = accessor.GetRowSpan(y);
+                    foreach (ref Rgb48 pixel in row)
+                    {
+                        if (isGrayScale)
+                        {
+                            histograms[0][(pixel.R + pixel.G + pixel.B) / 3 / 256]++;
+                        }
+                        else
+                        {
+                            histograms[0][pixel.R / 256]++;
+                            histograms[1][pixel.G / 256]++;
+                            histograms[2][pixel.B / 256]++;
+                        }
+                    }
+                }
+            });
+
+            return histograms;
+        }
+
+        private void DrawHistogram(Canvas canvas, int[] histogram, System.Windows.Media.Color color)
+        {
+            canvas.Children.Clear();
+            int max = histogram.Max();
+
+            for (int i = 0; i < 256; i++)
+            {
+                var bar = new System.Windows.Shapes.Rectangle();
+                bar.Width = 1;
+                bar.Height = (double)histogram[i] / max * canvas.Height;
+                bar.Fill = new System.Windows.Media.SolidColorBrush(color);
+                Canvas.SetLeft(bar, i);
+                Canvas.SetBottom(bar, 0);
+                canvas.Children.Add(bar);
+            }
         }
 
         private void GammaCorrection(Image<Rgb48> image)
@@ -232,10 +289,29 @@ namespace PakonImageConverter
             {
                 if (saturationLabel != null)
                     saturationLabel.Content = "Saturation: -";
+
+                redLabel.Content = "Gray";
+                greenLabel.Visibility = Visibility.Collapsed;
+                blueLabel.Visibility = Visibility.Collapsed;
+                greenHistogram.Visibility = Visibility.Collapsed;
+                blueHistogram.Visibility = Visibility.Collapsed;
             }
             else
+            {
                 saturationLabel.Content = "Saturation: " + String.Format("{0:0}%", _saturation * 100);
+                redLabel.Content = "Red";
+                greenLabel.Visibility = Visibility.Visible;
+                blueLabel.Visibility = Visibility.Visible;
+                greenHistogram.Visibility = Visibility.Visible;
+                blueHistogram.Visibility = Visibility.Visible;
+            }
 
+            if (imageBox.Source != null)
+            {
+                var bmp = (BitmapSource)imageBox.Source;
+                var image = bmp.ToImage<Rgb48>();
+                UpdateHistograms(image);
+            }
         }
 
         private void Window_Closed(object sender, EventArgs e)
