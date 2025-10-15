@@ -113,27 +113,28 @@ namespace PakonImageConverter
                 _processedImages.Clear();
 
 
-                LoadingProgress.Maximum = files.Count();
+                LoadingProgress.Maximum = files.Count() * 2;
                 LoadingProgress.Value = 0;
                 Task.Run(() =>
                 {
                     ImageFormats format = ImageFormats.PNG16;
                     Application.Current.Dispatcher.Invoke(() => format = (ImageFormats)imageFormat.SelectedItem);
 
-                    // TODO: we are allocating a ton of buffers now, what happens on a low mem machine?
-                    foreach (var filename in files)
+                    var processedImagesBag = new System.Collections.Concurrent.ConcurrentBag<ProcessedImage>();
+                    Parallel.ForEach(files, filename =>
                     {
+                        Application.Current.Dispatcher.Invoke(() => LoadingProgress.Value++);
+
                         var processor = new PakonRawProcessor();
                         Image<Rgb48> image = processor.ProcessImage(filename, _isBwImage, _gamma, _contrast, _saturation);
 
-                        SaveImage(format, filename, image);
-
                         var pixelBuffer = new byte[image.Width * image.Height * 6];
                         image.CopyPixelDataTo(pixelBuffer);
-                        _processedImages.Add(new ProcessedImage { Filename = filename, PixelData = pixelBuffer, Width = image.Width, Height = image.Height });
+                        processedImagesBag.Add(new ProcessedImage { Filename = filename, PixelData = pixelBuffer, Width = image.Width, Height = image.Height });
 
                         Application.Current.Dispatcher.Invoke(() => LoadingProgress.Value++);
-                    }
+                    });
+                    _processedImages.AddRange(processedImagesBag.OrderBy(p => p.Filename));
 
                     if (_processedImages.Any())
                     {
