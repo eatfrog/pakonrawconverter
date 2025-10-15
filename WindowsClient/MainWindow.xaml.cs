@@ -113,7 +113,7 @@ namespace PakonImageConverter
                 _processedImages.Clear();
 
 
-                LoadingProgress.Maximum = files.Count() * 2;
+                LoadingProgress.Maximum = files.Count() * 3;
                 LoadingProgress.Value = 0;
                 Task.Run(() =>
                 {
@@ -127,6 +127,9 @@ namespace PakonImageConverter
 
                         var processor = new PakonRawProcessor();
                         Image<Rgb48> image = processor.ProcessImage(filename, _isBwImage, _gamma, _contrast, _saturation);
+                        SaveImage(format, filename, image);
+
+                        Application.Current.Dispatcher.Invoke(() => LoadingProgress.Value++);
 
                         var pixelBuffer = new byte[image.Width * image.Height * 6];
                         image.CopyPixelDataTo(pixelBuffer);
