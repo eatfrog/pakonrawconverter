@@ -28,6 +28,17 @@ namespace PakonImageConverter
         private float _contrast = 1.08f;
         private float _saturation = 1.08f;
         private bool _isBwImage { get; set; }
+        private class ProcessedImage
+        {
+            public string Filename { get; set; }
+            public byte[] PixelData { get; set; }
+            public int Width { get; set; }
+            public int Height { get; set; }
+        }
+
+        private readonly System.Collections.Generic.List<ProcessedImage> _processedImages = new System.Collections.Generic.List<ProcessedImage>();
+        private int _currentImageIndex = -1;
+
 
         public MainWindow()
         {
@@ -37,6 +48,8 @@ namespace PakonImageConverter
             imageFormat.ItemsSource = Enum.GetValues(typeof(ImageFormats)).Cast<ImageFormats>();
             imageFormat.SelectedIndex = 0;
             SetValuesFromSettings();
+            PreviousButton.IsEnabled = false;
+            NextButton.IsEnabled = false;
         }
 
         private void SetValuesFromSettings()
@@ -52,15 +65,55 @@ namespace PakonImageConverter
             _gamma = WindowsClient.Properties.Settings.Default.Gamma;
         }
 
+        private void UpdateDisplayedImage()
+        {
+            if (!_processedImages.Any() || _currentImageIndex < 0 || _currentImageIndex >= _processedImages.Count)
+            { 
+                imageBox.Source = null;
+                imageFilenameLabel.Content = string.Empty;
+                return;
+            }
+
+            var currentImage = _processedImages[_currentImageIndex];
+            var stride = currentImage.Width * 6;
+            var bitmapSource = BitmapSource.Create(currentImage.Width, currentImage.Height, 96, 96, PixelFormats.Rgb48, null, currentImage.PixelData, stride);
+            imageBox.Source = bitmapSource;
+            imageFilenameLabel.Content = System.IO.Path.GetFileName(currentImage.Filename);
+            UpdateHistograms(bitmapSource.ToImage<Rgb48>());
+            UpdateNavigationButtonsState();
+        }
+
+        public void NextImage()
+        {
+            if (!_processedImages.Any() || _currentImageIndex >= _processedImages.Count - 1)
+                return;
+            _currentImageIndex++;
+            UpdateDisplayedImage();
+        }
+        
+        public void PreviousImage()
+        { 
+            if (!_processedImages.Any() || _currentImageIndex <= 0)
+                return;
+            _currentImageIndex--;
+            UpdateDisplayedImage();
+        }
+        
+        private void UpdateNavigationButtonsState()
+        {
+            PreviousButton.IsEnabled = _currentImageIndex > 0;
+            NextButton.IsEnabled = _currentImageIndex < _processedImages.Count - 1;
+        }
+
         private void ImagePanel_Drop(object sender, DragEventArgs e)
         {
             if (e.Data.GetDataPresent(DataFormats.FileDrop))
             {
-                // Note that you can have more than one file.
-                string[] files = (string[])e.Data.GetData(DataFormats.FileDrop);
+                string[] files = ((string[])e.Data.GetData(DataFormats.FileDrop)).OrderBy(f => f).ToArray();
+                _processedImages.Clear();
 
 
-                LoadingProgress.Maximum = files.Count() * 2;
+                LoadingProgress.Maximum = files.Count();
                 LoadingProgress.Value = 0;
                 Task.Run(() =>
                 {
@@ -68,24 +121,56 @@ namespace PakonImageConverter
                     Application.Current.Dispatcher.Invoke(() => format = (ImageFormats)imageFormat.SelectedItem);
 
                     // TODO: we are allocating a ton of buffers now, what happens on a low mem machine?
-                    Parallel.ForEach(files, filename =>
+                    foreach (var filename in files)
                     {
                         var processor = new PakonRawProcessor();
                         Image<Rgb48> image = processor.ProcessImage(filename, _isBwImage, _gamma, _contrast, _saturation);
 
-                        Application.Current.Dispatcher.Invoke(() => LoadingProgress.Value++);
-                        Application.Current.Dispatcher.Invoke(() => UpdateHistograms(image));
+                        SaveImage(format, filename, image);
 
-                        var preview = image.ToArray(new BmpEncoder());
-                        Application.Current.Dispatcher.Invoke(() => imageBox.Source = preview.ToBitmap().ToBitmapSource());
+                        var pixelBuffer = new byte[image.Width * image.Height * 6];
+                        image.CopyPixelDataTo(pixelBuffer);
+                        _processedImages.Add(new ProcessedImage { Filename = filename, PixelData = pixelBuffer, Width = image.Width, Height = image.Height });
+
                         Application.Current.Dispatcher.Invoke(() => LoadingProgress.Value++);
-                    });
+                    }
+
+                    if (_processedImages.Any())
+                    {
+                        _currentImageIndex = 0;
+                        Application.Current.Dispatcher.Invoke(UpdateDisplayedImage);
+                    }
+
                     SystemSounds.Beep.Play();
                 });
             }
         }
 
-        
+        private void SaveImage(ImageFormats format, string filename, Image<Rgb48> image)
+        {
+            if (_isBwImage)
+            {
+                image.Save(filename.Replace(".raw", ".png"), new PngEncoder() { ColorType = PngColorType.Grayscale, BitDepth = PngBitDepth.Bit16 });
+            }
+            else
+            {
+                switch (format)
+                {
+                    case ImageFormats.PNG16:
+                        image.Save(filename.Replace(".raw", ".png"), new PngEncoder() { BitDepth = PngBitDepth.Bit16 });
+                        break;
+                    case ImageFormats.JPG:
+                        image.Save(filename.Replace(".raw", ".jpg"), new SixLabors.ImageSharp.Formats.Jpeg.JpegEncoder());
+                        break;
+                    case ImageFormats.TIFF8:
+                        image.Save(filename.Replace(".raw", ".tiff"), new TiffEncoder { BitsPerPixel = TiffBitsPerPixel.Bit16 });
+                        break;
+                    default:
+                        break;
+                }
+            }
+        }
+
 
         private void UpdateHistograms(Image<Rgb48> image)
         {
@@ -217,6 +302,16 @@ namespace PakonImageConverter
             WindowsClient.Properties.Settings.Default.Saturation = _saturation;
             WindowsClient.Properties.Settings.Default.Gamma = (float)_gamma;
             WindowsClient.Properties.Settings.Default.Save();
+        }
+
+        private void NextImage_Click(object sender, RoutedEventArgs e)
+        {
+            NextImage();
+        }
+
+        private void PreviousImage_Click(object sender, RoutedEventArgs e)
+        { 
+            PreviousImage();
         }
     }
 }

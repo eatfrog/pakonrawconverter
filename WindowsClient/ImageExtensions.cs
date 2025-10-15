@@ -32,7 +32,7 @@ namespace PakonRawFileLib
             var bitmapSource = BitmapSource.Create(
                 bitmapData.Width, bitmapData.Height,
                 bmp.HorizontalResolution, bmp.VerticalResolution,
-                PixelFormats.Bgr24, null,
+                PixelFormats.Rgb48, null,
                 bitmapData.Scan0, bitmapData.Stride * bitmapData.Height, bitmapData.Stride);
 
             bmp.UnlockBits(bitmapData);
