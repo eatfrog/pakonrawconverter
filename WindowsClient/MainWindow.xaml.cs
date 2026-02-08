@@ -24,6 +24,9 @@ namespace PakonImageConverter
     /// </summary>
     public partial class MainWindow : Window
     {
+        private const double DefaultGamma = 0.4545454545454545;
+        private const double MinGamma = 0.4;
+        private const double MaxGamma = 1.0;
         private double _gamma = 0.4545454545454545;
         private float _contrast = 1.08f;
         private float _saturation = 1.08f;
@@ -62,7 +65,24 @@ namespace PakonImageConverter
             _saturation = WindowsClient.Properties.Settings.Default.Saturation;
             saturationSlider.Value = _saturation / 2;
             saturationLabel.Content = "Saturation: " + String.Format("{0:0}%", _saturation * 100);
-            _gamma = WindowsClient.Properties.Settings.Default.Gamma;
+            _gamma = NormalizeGamma(WindowsClient.Properties.Settings.Default.Gamma);
+            slider.Value = _gamma;
+            gammaLabel.Content = "Gamma: " + String.Format("{0:0.00}", 1 / _gamma);
+        }
+
+        private static double NormalizeGamma(double value)
+        {
+            if (double.IsNaN(value) || double.IsInfinity(value) || value <= 0)
+            {
+                return DefaultGamma;
+            }
+
+            if (value > 1)
+            {
+                value = 1 / value;
+            }
+
+            return Math.Clamp(value, MinGamma, MaxGamma);
         }
 
         private void UpdateDisplayedImage()
@@ -79,7 +99,10 @@ namespace PakonImageConverter
             var bitmapSource = BitmapSource.Create(currentImage.Width, currentImage.Height, 96, 96, PixelFormats.Rgb48, null, currentImage.PixelData, stride);
             imageBox.Source = bitmapSource;
             imageFilenameLabel.Content = System.IO.Path.GetFileName(currentImage.Filename);
-            UpdateHistograms(bitmapSource.ToImage<Rgb48>());
+            using (var histogramImage = bitmapSource.ToImage<Rgb48>())
+            {
+                UpdateHistograms(histogramImage);
+            }
             UpdateNavigationButtonsState();
         }
 
@@ -126,7 +149,7 @@ namespace PakonImageConverter
                         Application.Current.Dispatcher.Invoke(() => LoadingProgress.Value++);
 
                         var processor = new PakonRawProcessor();
-                        Image<Rgb48> image = processor.ProcessImage(filename, _isBwImage, _gamma, _contrast, _saturation);
+                        using var image = processor.ProcessImage(filename, _isBwImage, _gamma, _contrast, _saturation);
                         SaveImage(format, filename, image);
 
                         Application.Current.Dispatcher.Invoke(() => LoadingProgress.Value++);
@@ -294,8 +317,10 @@ namespace PakonImageConverter
             if (imageBox.Source != null)
             {
                 var bmp = (BitmapSource)imageBox.Source;
-                var image = bmp.ToImage<Rgb48>();
-                UpdateHistograms(image);
+                using (var image = bmp.ToImage<Rgb48>())
+                {
+                    UpdateHistograms(image);
+                }
             }
         }
 

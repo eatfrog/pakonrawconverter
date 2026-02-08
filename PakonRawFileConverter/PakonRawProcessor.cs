@@ -11,20 +11,24 @@ namespace PakonRawFileLib
     {
         public Image<Rgb48> ProcessImage(string filename, bool isBwImage, double gamma, float contrast, float saturation)
         {
-            StreamReader ms = new StreamReader(filename);
-
             var header = new byte[16];
+            byte[] buffer;
+            byte[] interleaved;
+            int width;
+            int height;
 
-            ms.BaseStream.Read(header, 0, 16);
-            int width = (int)BitConverter.ToUInt32(header, 4);
-            int height = (int)BitConverter.ToUInt32(header, 8);
+            using (var fileStream = File.OpenRead(filename))
+            {
+                fileStream.ReadExactly(header, 0, 16);
+                width = (int)BitConverter.ToUInt32(header, 4);
+                height = (int)BitConverter.ToUInt32(header, 8);
 
-            if (width > 5000 || height > 5000) throw new InvalidOperationException("You are probably not processing a pakon raw file");
+                if (width > 5000 || height > 5000) throw new InvalidOperationException("You are probably not processing a pakon raw file");
 
-            byte[] buffer = new byte[width * height * 6];
-            byte[] interleaved = new byte[width * height * 6];
-
-            ms.BaseStream.Read(buffer, 0, width * height * 6);
+                buffer = new byte[width * height * 6];
+                interleaved = new byte[width * height * 6];
+                fileStream.ReadExactly(buffer, 0, width * height * 6);
+            }
 
             InterleaveBuffer(width, height, buffer, interleaved);
             var image = Image.LoadPixelData<Rgb48>(interleaved, width, height);
