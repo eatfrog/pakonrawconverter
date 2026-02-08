@@ -1,4 +1,4 @@
-﻿using SixLabors.ImageSharp;
+using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Advanced;
 using SixLabors.ImageSharp.Formats;
 using SixLabors.ImageSharp.PixelFormats;
@@ -7,6 +7,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Media;
@@ -31,11 +32,22 @@ namespace PakonRawFileLib
             var bitmapSource = BitmapSource.Create(
                 bitmapData.Width, bitmapData.Height,
                 bmp.HorizontalResolution, bmp.VerticalResolution,
-                PixelFormats.Bgr24, null,
+                PixelFormats.Rgb48, null,
                 bitmapData.Scan0, bitmapData.Stride * bitmapData.Height, bitmapData.Stride);
 
             bmp.UnlockBits(bitmapData);
             return bitmapSource;
+        }
+
+        public static SixLabors.ImageSharp.Image<TPixel> ToImage<TPixel>(this BitmapSource bmp)
+            where TPixel : unmanaged, IPixel<TPixel>
+        {
+            var width = bmp.PixelWidth;
+            var height = bmp.PixelHeight;
+            var stride = width * Unsafe.SizeOf<TPixel>();
+            var buffer = new byte[height * stride];
+            bmp.CopyPixels(buffer, stride, 0);
+            return SixLabors.ImageSharp.Image.LoadPixelData<TPixel>(buffer, width, height);
         }
     }
 }

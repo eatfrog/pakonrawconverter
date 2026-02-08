@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Linq;
 using System.Media;
@@ -13,6 +13,9 @@ using SixLabors.ImageSharp.Processing;
 using Image = SixLabors.ImageSharp.Image;
 using PakonRawFileLib;
 using System.Windows.Controls;
+using System.Windows.Media;
+using System.Windows.Shapes;
+using System.Windows.Media.Imaging;
 
 namespace PakonImageConverter
 {
@@ -21,10 +24,24 @@ namespace PakonImageConverter
     /// </summary>
     public partial class MainWindow : Window
     {
+        private const double DefaultGamma = 0.4545454545454545;
+        private const double MinGamma = 0.4;
+        private const double MaxGamma = 1.0;
         private double _gamma = 0.4545454545454545;
         private float _contrast = 1.08f;
         private float _saturation = 1.08f;
         private bool _isBwImage { get; set; }
+        private class ProcessedImage
+        {
+            public string Filename { get; set; }
+            public byte[] PixelData { get; set; }
+            public int Width { get; set; }
+            public int Height { get; set; }
+        }
+
+        private readonly System.Collections.Generic.List<ProcessedImage> _processedImages = new System.Collections.Generic.List<ProcessedImage>();
+        private int _currentImageIndex = -1;
+
 
         public MainWindow()
         {
@@ -34,6 +51,8 @@ namespace PakonImageConverter
             imageFormat.ItemsSource = Enum.GetValues(typeof(ImageFormats)).Cast<ImageFormats>();
             imageFormat.SelectedIndex = 0;
             SetValuesFromSettings();
+            PreviousButton.IsEnabled = false;
+            NextButton.IsEnabled = false;
         }
 
         private void SetValuesFromSettings()
@@ -46,95 +65,122 @@ namespace PakonImageConverter
             _saturation = WindowsClient.Properties.Settings.Default.Saturation;
             saturationSlider.Value = _saturation / 2;
             saturationLabel.Content = "Saturation: " + String.Format("{0:0}%", _saturation * 100);
-            _gamma = WindowsClient.Properties.Settings.Default.Gamma;
+            _gamma = NormalizeGamma(WindowsClient.Properties.Settings.Default.Gamma);
+            slider.Value = _gamma;
+            gammaLabel.Content = "Gamma: " + String.Format("{0:0.00}", 1 / _gamma);
+        }
+
+        private static double NormalizeGamma(double value)
+        {
+            if (double.IsNaN(value) || double.IsInfinity(value) || value <= 0)
+            {
+                return DefaultGamma;
+            }
+
+            if (value > 1)
+            {
+                value = 1 / value;
+            }
+
+            return Math.Clamp(value, MinGamma, MaxGamma);
+        }
+
+        private void UpdateDisplayedImage()
+        {
+            if (!_processedImages.Any() || _currentImageIndex < 0 || _currentImageIndex >= _processedImages.Count)
+            { 
+                imageBox.Source = null;
+                imageFilenameLabel.Content = string.Empty;
+                return;
+            }
+
+            var currentImage = _processedImages[_currentImageIndex];
+            var stride = currentImage.Width * 6;
+            var bitmapSource = BitmapSource.Create(currentImage.Width, currentImage.Height, 96, 96, PixelFormats.Rgb48, null, currentImage.PixelData, stride);
+            imageBox.Source = bitmapSource;
+            imageFilenameLabel.Content = System.IO.Path.GetFileName(currentImage.Filename);
+            using (var histogramImage = bitmapSource.ToImage<Rgb48>())
+            {
+                UpdateHistograms(histogramImage);
+            }
+            UpdateNavigationButtonsState();
+        }
+
+        public void NextImage()
+        {
+            if (!_processedImages.Any() || _currentImageIndex >= _processedImages.Count - 1)
+                return;
+            _currentImageIndex++;
+            UpdateDisplayedImage();
+        }
+        
+        public void PreviousImage()
+        { 
+            if (!_processedImages.Any() || _currentImageIndex <= 0)
+                return;
+            _currentImageIndex--;
+            UpdateDisplayedImage();
+        }
+        
+        private void UpdateNavigationButtonsState()
+        {
+            PreviousButton.IsEnabled = _currentImageIndex > 0;
+            NextButton.IsEnabled = _currentImageIndex < _processedImages.Count - 1;
         }
 
         private void ImagePanel_Drop(object sender, DragEventArgs e)
         {
             if (e.Data.GetDataPresent(DataFormats.FileDrop))
             {
-                // Note that you can have more than one file.
-                string[] files = (string[])e.Data.GetData(DataFormats.FileDrop);
+                string[] files = ((string[])e.Data.GetData(DataFormats.FileDrop)).OrderBy(f => f).ToArray();
+                _processedImages.Clear();
 
 
-                LoadingProgress.Maximum = files.Count() * 2;
+                LoadingProgress.Maximum = files.Count() * 3;
                 LoadingProgress.Value = 0;
                 Task.Run(() =>
                 {
                     ImageFormats format = ImageFormats.PNG16;
                     Application.Current.Dispatcher.Invoke(() => format = (ImageFormats)imageFormat.SelectedItem);
 
-                    // TODO: we are allocating a ton of buffers now, what happens on a low mem machine?
+                    var processedImagesBag = new System.Collections.Concurrent.ConcurrentBag<ProcessedImage>();
                     Parallel.ForEach(files, filename =>
                     {
-                        Image<Rgb48> image = ProcessImage(filename, format);
+                        Application.Current.Dispatcher.Invoke(() => LoadingProgress.Value++);
 
-                        var preview = image.ToArray(new BmpEncoder());
-                        Application.Current.Dispatcher.Invoke(() => imageBox.Source = preview.ToBitmap().ToBitmapSource());
+                        var processor = new PakonRawProcessor();
+                        using var image = processor.ProcessImage(filename, _isBwImage, _gamma, _contrast, _saturation);
+                        SaveImage(format, filename, image);
+
+                        Application.Current.Dispatcher.Invoke(() => LoadingProgress.Value++);
+
+                        var pixelBuffer = new byte[image.Width * image.Height * 6];
+                        image.CopyPixelDataTo(pixelBuffer);
+                        processedImagesBag.Add(new ProcessedImage { Filename = filename, PixelData = pixelBuffer, Width = image.Width, Height = image.Height });
+
                         Application.Current.Dispatcher.Invoke(() => LoadingProgress.Value++);
                     });
+                    _processedImages.AddRange(processedImagesBag.OrderBy(p => p.Filename));
+
+                    if (_processedImages.Any())
+                    {
+                        _currentImageIndex = 0;
+                        Application.Current.Dispatcher.Invoke(UpdateDisplayedImage);
+                    }
+
                     SystemSounds.Beep.Play();
                 });
             }
         }
 
-        private Image<Rgb48> ProcessImage(string filename, ImageFormats format)
+        private void SaveImage(ImageFormats format, string filename, Image<Rgb48> image)
         {
-            StreamReader ms = new StreamReader(filename);
-
-            // TODO: What if there is no header saved?
-            var header = new byte[16];
-
-            ms.BaseStream.Read(header, 0, 16);
-            int width = (int)BitConverter.ToUInt32(header, 4);
-            int height = (int)BitConverter.ToUInt32(header, 8);
-
-            if (width > 5000 || height > 5000) throw new InvalidOperationException("You are probably not processing a pakon raw file");
-
-            // The file is in planar mode so RRRRRGGGGGBBBB
-
-            byte[] buffer = new byte[width * height * 6];
-            // But imagesharp wants it in interleaved mode so RGBRGBRGBRGB
-            byte[] interleaved = new byte[width * height * 6];
-
-            ms.BaseStream.Read(buffer, 0, width * height * 6);
-
-            Application.Current.Dispatcher.Invoke(() => LoadingProgress.Value++);
-
-            InterleaveBuffer(width, height, buffer, interleaved);
-            var image = Image.LoadPixelData<Rgb48>(interleaved, width, height);
-            (Rgb48, Rgb48) darkestAndBrightest = image.SetWhiteAndBlackpoint(_isBwImage);
-
-            Application.Current.Dispatcher.Invoke(() =>
-            {
-                var brightest = _isBwImage ? darkestAndBrightest.Item1 : darkestAndBrightest.Item2;
-                var darkest = _isBwImage ? darkestAndBrightest.Item2 : darkestAndBrightest.Item1;
-
-                darkestImageInfo.Content = $"Darkest R: {darkest.R} \r\n";
-                darkestImageInfo.Content += $"Darkest G: {darkest.G} \r\n";
-                darkestImageInfo.Content += $"Darkest B: {darkest.B} \r\n";
-                brightestImageInfo.Content = $"Brightest R: {brightest.R} \r\n";
-                brightestImageInfo.Content += $"Brightest G: {brightest.G} \r\n";
-                brightestImageInfo.Content += $"Brightest B: {brightest.B} \r\n";
-            });
-
-            GammaCorrection(image);
-
-            // TODO: folder setting
-            // TODO: preview before save
-
             if (_isBwImage)
             {
-                image.Mutate(x => x.Invert()); // We probably want separate adjustments for bw raws
-                image.Mutate(x => x.Saturate(0f));                         
                 image.Save(filename.Replace(".raw", ".png"), new PngEncoder() { ColorType = PngColorType.Grayscale, BitDepth = PngBitDepth.Bit16 });
             }
             else
             {
-                image.Mutate(x => x.Contrast(_contrast));
-                image.Mutate(x => x.Saturate(_saturation)); 
-
-
                 switch (format)
                 {
                     case ImageFormats.PNG16:
@@ -150,12 +196,33 @@ namespace PakonImageConverter
                         break;
                 }
             }
-
-            return image;
         }
 
-        private void GammaCorrection(Image<Rgb48> image)
+
+        private void UpdateHistograms(Image<Rgb48> image)
         {
+            if (_isBwImage)
+            {
+                var histogram = CalculateHistogram(image, true);
+                DrawHistogram(redHistogram, histogram[0], Colors.Gray);
+            }
+            else
+            {
+                var histograms = CalculateHistogram(image, false);
+                DrawHistogram(redHistogram, histograms[0], Colors.DarkRed);
+                DrawHistogram(greenHistogram, histograms[1], Colors.DarkGreen);
+                DrawHistogram(blueHistogram, histograms[2], Colors.DarkBlue);
+            }
+        }
+
+        private int[][] CalculateHistogram(Image<Rgb48> image, bool isGrayScale)
+        {
+            var histograms = new int[isGrayScale ? 1 : 3][];
+            for (int i = 0; i < histograms.Length; i++)
+            {
+                histograms[i] = new int[256];
+            }
+
             image.ProcessPixelRows(accessor =>
             {
                 for (int y = 0; y < accessor.Height; y++)
@@ -163,43 +230,41 @@ namespace PakonImageConverter
                     Span<Rgb48> row = accessor.GetRowSpan(y);
                     foreach (ref Rgb48 pixel in row)
                     {
-                        // TODO: these variable color balance adjustments should have a setting
-                        double rangeR = (double)pixel.R / 65500;
-                        double correctionR = Math.Pow(rangeR, _gamma * 0.98);
-                        pixel.R = (ushort)(correctionR * 65500);
-
-                        double rangeG = (double)pixel.G / 65500;
-                        double correctionG = Math.Pow(rangeG, _gamma * 1.02);
-                        pixel.G = (ushort)(correctionG * 65500);
-
-                        double rangeB = (double)pixel.B / 65500;
-                        double correctionB = Math.Pow(rangeB, _gamma * 1.03);
-                        pixel.B = (ushort)(correctionB * 65500);
+                        if (isGrayScale)
+                        {
+                            histograms[0][(pixel.R + pixel.G + pixel.B) / 3 / 256]++;
+                        }
+                        else
+                        {
+                            histograms[0][pixel.R / 256]++;
+                            histograms[1][pixel.G / 256]++;
+                            histograms[2][pixel.B / 256]++;
+                        }
                     }
                 }
             });
+
+            return histograms;
         }
 
-        private static void InterleaveBuffer(int width, int height, byte[] buffer, byte[] interleaved)
+        private void DrawHistogram(Canvas canvas, int[] histogram, System.Windows.Media.Color color)
         {
-            int pixelSize = 6;
+            canvas.Children.Clear();
+            int max = histogram.Max();
 
-            // Interleave the buffer
-            for (int i = 0; i != width * height * 2; i += 2)
+            for (int i = 0; i < 256; i++)
             {
-                // R
-                interleaved[i / 2 * pixelSize + 0] = buffer[i];
-                interleaved[i / 2 * pixelSize + 1] = buffer[i + 1];
-
-                // G - we got to jump over all R bytes first
-                interleaved[i / 2 * pixelSize + 2] = buffer[(2 * width * height) + i];
-                interleaved[i / 2 * pixelSize + 3] = buffer[(2 * width * height) + i + 1];
-
-                // B - we got to jump over all G bytes first
-                interleaved[i / 2 * pixelSize + 4] = buffer[(2 * 2 * width * height) + i];
-                interleaved[i / 2 * pixelSize + 5] = buffer[(2 * 2 * width * height) + i + 1];
+                var bar = new System.Windows.Shapes.Rectangle();
+                bar.Width = 1;
+                bar.Height = (double)histogram[i] / max * canvas.Height;
+                bar.Fill = new System.Windows.Media.SolidColorBrush(color);
+                Canvas.SetLeft(bar, i);
+                Canvas.SetBottom(bar, 0);
+                canvas.Children.Add(bar);
             }
         }
+
+        
 
         private void GammaSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
@@ -232,10 +297,31 @@ namespace PakonImageConverter
             {
                 if (saturationLabel != null)
                     saturationLabel.Content = "Saturation: -";
+
+                redLabel.Content = "Gray";
+                greenLabel.Visibility = Visibility.Collapsed;
+                blueLabel.Visibility = Visibility.Collapsed;
+                greenHistogram.Visibility = Visibility.Collapsed;
+                blueHistogram.Visibility = Visibility.Collapsed;
             }
             else
+            {
                 saturationLabel.Content = "Saturation: " + String.Format("{0:0}%", _saturation * 100);
+                redLabel.Content = "Red";
+                greenLabel.Visibility = Visibility.Visible;
+                blueLabel.Visibility = Visibility.Visible;
+                greenHistogram.Visibility = Visibility.Visible;
+                blueHistogram.Visibility = Visibility.Visible;
+            }
 
+            if (imageBox.Source != null)
+            {
+                var bmp = (BitmapSource)imageBox.Source;
+                using (var image = bmp.ToImage<Rgb48>())
+                {
+                    UpdateHistograms(image);
+                }
+            }
         }
 
         private void Window_Closed(object sender, EventArgs e)
@@ -245,6 +331,16 @@ namespace PakonImageConverter
             WindowsClient.Properties.Settings.Default.Saturation = _saturation;
             WindowsClient.Properties.Settings.Default.Gamma = (float)_gamma;
             WindowsClient.Properties.Settings.Default.Save();
+        }
+
+        private void NextImage_Click(object sender, RoutedEventArgs e)
+        {
+            NextImage();
+        }
+
+        private void PreviousImage_Click(object sender, RoutedEventArgs e)
+        { 
+            PreviousImage();
         }
     }
 }
